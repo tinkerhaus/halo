@@ -10,7 +10,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     let store = HaloStore()
     let voice = Voice()
     let permissions = Permissions()
-    let updater = Updater()
+    let updater = UpdateChecker()
 
     private let wheel = WheelController()
     private let summon = Summon()
@@ -70,6 +70,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
 
         voice.prepare()                      // load the model (downloads on first run)
+        updater.checkInBackground()          // notify if a newer build has shipped (daily, quiet)
     }
 
     /// Keep Halo running (wheel + menu bar) when the main window is closed; only

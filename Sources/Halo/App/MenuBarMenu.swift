@@ -8,7 +8,7 @@ struct MenuBarMenu: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(Voice.self) private var voice
     @Environment(HaloStore.self) private var store
-    @Environment(Updater.self) private var updater
+    @Environment(UpdateChecker.self) private var updater
 
     var body: some View {
         Text("Voice: \(voice.statusText)")

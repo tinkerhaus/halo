@@ -4,7 +4,7 @@ set -euo pipefail
 APP_NAME="Halo"
 BUNDLE_ID="com.halo.app"
 VERSION="${VERSION:-0.1.0}"   # override per release: VERSION=0.1.1 ./package.sh
-BUILD="${BUILD:-1}"           # CFBundleVersion; Sparkle compares this. BUILD=2 ./package.sh
+BUILD="${BUILD:-1}"           # CFBundleVersion (the update check compares this). BUILD=2 ./package.sh
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 APP="$ROOT/build/$APP_NAME.app"
@@ -20,16 +20,6 @@ cp "$BIN" "$APP/Contents/MacOS/$APP_NAME"
 chmod +x "$APP/Contents/MacOS/$APP_NAME"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 [ -f "$ROOT/Resources/AppIcon.icns" ] && cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
-
-# Sparkle is a *dynamic* framework (Yams/WhisperKit are static source), so it has
-# to be copied into the bundle and reachable at runtime. SPM links it as
-# @rpath/Sparkle.framework/… but bakes no app-relative rpath, so add one.
-echo "▸ Embedding Sparkle.framework"
-SPARKLE_FW="$(find "$ROOT/.build/artifacts" -type d -name Sparkle.framework -path '*macos-arm64*' | head -1)"
-[ -n "$SPARKLE_FW" ] || { echo "✗ Sparkle.framework not found — run 'swift build' first."; exit 1; }
-mkdir -p "$APP/Contents/Frameworks"
-ditto "$SPARKLE_FW" "$APP/Contents/Frameworks/Sparkle.framework"
-install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/$APP_NAME"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -52,13 +42,6 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <string>Halo uses the microphone to dictate when you release the wheel at its center. Audio is processed on-device.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>Halo transcribes your dictation on-device.</string>
-    <key>SUFeedURL</key>                      <string>https://tinkerhaus.github.io/halo/appcast.xml</string>
-    <key>SUPublicEDKey</key>                  <string>m1galZQk0Cqt7fguZtkJdezgtIzbrfSP30J12zwUOTA=</string>
-    <key>SUEnableAutomaticChecks</key>        <true/>
-    <key>SUScheduledCheckInterval</key>       <integer>86400</integer>
-    <!-- Notify-only: self-signed builds can't auto-install (macOS App Management),
-         so Sparkle shows an update notice + download link, never installs in place. -->
-    <key>SUAutomaticallyUpdate</key>          <false/>
 </dict>
 </plist>
 PLIST
@@ -74,9 +57,6 @@ cat > "$ENTITLEMENTS" <<ENT
 <dict>
     <key>com.apple.security.device.audio-input</key> <true/>
     <key>com.apple.security.cs.allow-jit</key>       <true/>
-    <!-- Load the embedded Sparkle.framework: self-signed certs carry no Team ID,
-         so hardened-runtime library validation would otherwise reject it. -->
-    <key>com.apple.security.cs.disable-library-validation</key> <true/>
 </dict>
 </plist>
 ENT
@@ -87,20 +67,6 @@ if [ -z "$IDENTITY" ]; then
 else
     echo "▸ Signing with stable identity: Halo Developer ($IDENTITY)"
 fi
-
-# Sign Sparkle inside-out: nested helpers first, then the framework, then the app
-# last so its seal covers everything. Same identity as the app, so the app's
-# hardened-runtime library validation accepts the framework. Helpers get hardened
-# runtime but none of the app's entitlements (they don't need mic/JIT).
-FW="$APP/Contents/Frameworks/Sparkle.framework"
-for nested in \
-    "$FW/Versions/Current/XPCServices/Downloader.xpc" \
-    "$FW/Versions/Current/XPCServices/Installer.xpc" \
-    "$FW/Versions/Current/Updater.app" \
-    "$FW/Versions/Current/Autoupdate"; do
-    [ -e "$nested" ] && codesign --force --options runtime --sign "$IDENTITY" "$nested"
-done
-codesign --force --options runtime --sign "$IDENTITY" "$FW"
 
 codesign --force --sign "$IDENTITY" --options runtime --entitlements "$ENTITLEMENTS" "$APP"
 rm -f "$ENTITLEMENTS"

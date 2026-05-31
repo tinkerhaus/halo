@@ -22,8 +22,6 @@ mv build/Halo.app /Applications/ && open /Applications/Halo.app
   rebuilds** (Accessibility / Input Monitoring bind to the code signature hash; an
   ad-hoc signature changes every build and silently drops grants).
 - After granting a permission, **fully quit and relaunch** — TCC caches per process.
-- `package.sh` also embeds + signs `Sparkle.framework` into the bundle (see
-  **Auto-updates** and the framework-embedding pitfall below).
 
 ## Permissions
 
@@ -49,8 +47,7 @@ Sources/Halo/
   Views/    SettingsView · Components
 ```
 
-Dependencies: **Yams** (YAML config), **WhisperKit** (on-device transcription),
-**Sparkle** (auto-updates).
+Dependencies: **Yams** (YAML config), **WhisperKit** (on-device transcription).
 
 ### Domain model (value types, all `Codable`)
 
@@ -101,29 +98,25 @@ launch from the Hugging Face repo `tinkerhaus/whisperkit-coreml`
 (variant `openai_whisper-large-v3-v20240930_turbo`), so the `.app` stays small. Load
 status (download %, ready, recording, transcribing) shows in the menu-bar menu.
 
-## Auto-updates (Sparkle) — notify-only
+## Updates — notify-only
 
-Halo embeds **Sparkle** to *notify* about new versions, but it does **not** install
-them. A self-signed / un-notarized build has **no Team ID**, so macOS **App Management**
-denies the self-update exemption and blocks Sparkle from replacing the bundle (the
-install fails with *"…was prevented from modifying the applications"*). So updates are
-**informational**: each `docs/appcast.xml` item has **no `<enclosure>`**, Sparkle shows
-an update notice with a **Learn More** link to the releases page, and the user downloads
-+ installs the new dmg manually. `SUAutomaticallyUpdate` is `false` so Sparkle never
-attempts the in-place install. (This is the real cost of the $0/self-signed route —
-see the [[halo-release]] memory. The download + **Ed25519** machinery, `SUPublicEDKey`
-and the keychain private key, is wired but unused; it's ready for the day Halo is
-notarized and can switch to true in-place updates.)
+Halo is self-signed / un-notarized, so macOS **App Management** blocks any in-place
+self-update: a self-signed build has **no Team ID**, so macOS won't grant the
+self-update exemption and the install fails with *"…was prevented from modifying the
+applications."* So Halo bundles **no updater framework** — it just **notifies**.
 
-`AppController` owns an `Updater` (wrapping `SPUStandardUpdaterController`); **Check for
-Updates…** is in both the menu-bar menu and the app menu. The feed is `docs/appcast.xml`
-on GitHub Pages (`SUFeedURL`); checks are automatic (daily) but never auto-install.
+`UpdateChecker` (an `@Observable` owned by `AppController`) fetches a tiny JSON manifest
+**`docs/version.json`** from GitHub Pages, compares its `build` to the running
+`CFBundleVersion`, and — when a newer build is out — shows a native alert with a
+**Download** button (opens the releases page), plus *Remind Me Later* / *Skip This
+Version*. It checks quietly on launch (at most once a day) and on demand via **Check for
+Updates…** (in the menu-bar menu and the app menu). Nothing is downloaded or installed
+in-app — the user grabs the new dmg and drags it into Applications, like the first time.
 
 Cutting a release: bump `VERSION`/`BUILD` in `package.sh` (both env-overridable, e.g.
 `VERSION=0.1.1 BUILD=2 ./package.sh`), build + dmg, upload it as a GitHub release, then
-add an `<item>` to `docs/appcast.xml` with the new `sparkle:version` (= `CFBundleVersion`),
-`sparkle:shortVersionString`, and a `<link>` to the release — **no** enclosure, length,
-or signature. Push to `main`; Pages republishes the feed.
+bump `build` (= the new `CFBundleVersion`) and `shortVersion` in `docs/version.json` and
+push to `main`; Pages republishes the manifest.
 
 ## Conventions
 
@@ -171,13 +164,8 @@ or signature. Push to `main`; Pages republishes the feed.
   clicking. The recorder and `Summon` both reject them; the config self-heals.
 - **Logs from ad-hoc/self-signed apps are filtered out of Console/`log show`.** If you
   need traces during dev, write to a file under `~/Library/Logs/Halo/` and `tail` it.
-- **Embedding a dynamic framework (Sparkle) in the self-signed app.** `package.sh`
-  hand-assembles the `.app`, so Sparkle — a *dynamic* XCFramework, unlike the static
-  Yams/WhisperKit source — must be copied into `Contents/Frameworks`, given an
-  `@executable_path/../Frameworks` rpath (SPM bakes none into the binary), and **signed
-  inside-out** (`XPCServices/*.xpc` → `Updater.app` → `Autoupdate` → framework → app).
-  The catch: a self-signed cert has **no Team ID**, so hardened-runtime *library
-  validation* refuses to load the framework (`dyld: … different Team IDs`). Fix: the
-  `com.apple.security.cs.disable-library-validation` entitlement on the app. Always
-  `open` the freshly built `.app` and confirm it stays alive **before** replacing
-  `/Applications/Halo.app` — a dyld miss is a silent, instant launch crash.
+- **Self-signed apps can't self-update in place.** A self-signed build has no Team ID,
+  so macOS App Management refuses the self-update exemption and blocks any tool from
+  replacing the bundle (*"…prevented from modifying the applications"*). That's why
+  updates are notify-only (see **Updates**); true in-place auto-update would require a
+  Developer ID + notarization.
