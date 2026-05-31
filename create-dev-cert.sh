@@ -7,7 +7,9 @@ set -e
 CN="Halo Developer"
 KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
 
-if security find-identity -v -p codesigning | grep -q "$CN"; then
+# NB: no -v — a self-signed identity is untrusted (CSSMERR_TP_NOT_TRUSTED) and
+# never appears in the -v (valid-only) list, so -v here would re-create it forever.
+if security find-identity -p codesigning | grep -q "$CN"; then
     echo "✓ Code-signing identity '$CN' already exists."
     exit 0
 fi

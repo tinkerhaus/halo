@@ -17,6 +17,13 @@ struct Spoke: Equatable, Identifiable {
         case opens(Halo)
     }
 
+    // `id` is runtime-only (never serialized), so it must not affect equality —
+    // otherwise a freshly-decoded config never equals the in-memory one and the
+    // file-watcher's reload/save dedup can never short-circuit (a rewrite loop).
+    static func == (a: Spoke, b: Spoke) -> Bool {
+        a.label == b.label && a.glyph == b.glyph && a.content == b.content
+    }
+
     var isWell: Bool {
         if case .opens = content { return true }
         return false
@@ -73,23 +80,38 @@ extension Spoke: Codable {
 
 /// A ring of spokes: the arc they fan across, how far out they sit, and the
 /// spokes themselves. Recursive — a spoke may open another `Halo`.
+///
+/// `center` is what release-at-center fires. When omitted it defaults per
+/// context (root wheel → dictate; a sub-ring → back out), resolved by the
+/// wheel controller — so existing configs are unchanged.
 struct Halo: Codable, Equatable {
     var arc = Arc()
     var radius: Int = 124            // points from the hub to each spoke
     var spokes: [Spoke] = []
+    var center: Action?              // release-at-center action (nil → context default)
 
-    init(arc: Arc = Arc(), radius: Int = 124, spokes: [Spoke] = []) {
+    init(arc: Arc = Arc(), radius: Int = 124, spokes: [Spoke] = [], center: Action? = nil) {
         self.arc = arc
         self.radius = radius
         self.spokes = spokes
+        self.center = center
     }
 
-    enum CodingKeys: String, CodingKey { case arc, radius, spokes }
+    enum CodingKeys: String, CodingKey { case arc, radius, spokes, center }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(arc, forKey: .arc)
+        try c.encode(radius, forKey: .radius)
+        try c.encode(spokes, forKey: .spokes)
+        if let center { try c.encode(center.steps, forKey: .center) }
+    }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         arc = (try? c.decodeIfPresent(Arc.self, forKey: .arc)) ?? Arc()
         radius = (try? c.decodeIfPresent(Int.self, forKey: .radius)) ?? 124
         spokes = (try? c.decodeIfPresent([Spoke].self, forKey: .spokes)) ?? []
+        if let steps = try? c.decodeIfPresent([Step].self, forKey: .center) { center = Action(steps) }
     }
 }

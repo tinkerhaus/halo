@@ -57,21 +57,30 @@ final class HaloStore {
     #
     # summonButton : mouse button that opens the wheel (NSEvent number; 2=middle, 3=back, 4=forward).
     #                Left/right (0/1) are not allowed.
-    # voice.mode   : "handsFree" (release at center to start; press summon again to stop)
-    #                or "pushToTalk" (hold at center to talk; release to send).
+    # voice.finish : the default finish ring (a halo) shown when you stop a dictation.
+    #                A profile may set its own `finish`; omit both for a built-in plain-Send ring.
     # fallback     : the wheel shown when no profile matches the frontmost app.
-    # profiles     : list of { name, apps: [bundleID], halo } — used when the frontmost app is in `apps`.
-    # halo         : { arc: { spanDegrees, centerDegrees }, radius, spokes: [...] }
+    # profiles     : list of { name, apps: [bundleID], halo, finish? }. The frontmost app picks
+    #                the profile; most specific (fewest apps) wins, so a 1-app profile overrides a group.
+    # halo         : { arc: { spanDegrees, centerDegrees }, radius, spokes: [...], center? }
     #                The arc never closes a full circle; the empty wedge = release-to-cancel.
     #                centerDegrees -90 = straight up.
+    # center       : steps fired when you release at the hub. Omit and it defaults by context —
+    #                the action wheel dictates; a finish ring sends. e.g. center: [ {do: send}, {key: return} ]
     # spoke        : { label, glyph, <exactly one of>: key | text | steps | well }
     #                key   : a chord string, e.g. "cmd+shift+z", "ctrl+c", "tab", "cmd+[", "up"
     #                        mods: cmd|ctrl|opt|shift   keys: a-z 0-9, return/enter, esc, tab, space,
     #                        delete, up/down/left/right, home/end, and [ ] / \\\\ ; ' , . - = `
     #                text  : type literal text
-    #                steps : list of { key|text|paste|pause } for multi-step macros (paste: N, pause: ms)
+    #                steps : ordered list of { key | text | paste | pause | do } — runs in sequence.
+    #                        paste: N (clipboard history)   pause: ms
+    #                        do: send | dictate | cancel | undo  (dictation verbs — see below)
     #                well  : a nested halo (a sub-ring you dwell into): { arc, radius, spokes }
     #                glyph : an SF Symbol name, e.g. "arrow.up", "stop.circle"
+    # do (verbs)   : dictate — start a voice session (the hub becomes the live waveform)
+    #                send    — inject what you just dictated (compose with keys, e.g. [ {do: send}, {key: return} ])
+    #                cancel  — discard the recording without injecting
+    #                undo    — delete the last dictation you injected (works even where ⌘Z doesn't)
 
     """
 

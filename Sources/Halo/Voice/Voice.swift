@@ -39,9 +39,6 @@ final class Voice {
     private let model = "openai_whisper-large-v3-v20240930_turbo"
     private let repo = "haloapp/whisperkit-coreml"
 
-    /// Called on the main thread when a dictation session finishes (text injected).
-    var onFinish: (() -> Void)?
-
     private var whisper: WhisperKit?
     private var recorder: AVAudioRecorder?
     private var recordingURL: URL?
@@ -117,12 +114,27 @@ final class Voice {
         if status == .recording { status = .ready }
     }
 
-    /// Stop recording, transcribe, and type the result into the frontmost app.
-    func stopAndInject() {
-        guard let recorder, let url = recordingURL else { return }
-        recorder.stop()
-        self.recorder = nil
-        self.recordingURL = nil
+    /// Stop the recorder but keep the audio — the finish-ring press means "I'm
+    /// done talking"; transcription waits until a `send` commits.
+    func stopRecording() {
+        recorder?.stop()
+        recorder = nil
+        if status == .recording { status = .ready }
+    }
+
+    /// The most recent transcript (readable state — also the hinge a future
+    /// voice-command runner would route instead of injecting).
+    private(set) var lastTranscript = ""
+
+    /// Exactly what we last injected, so `undoLast()` can delete precisely that
+    /// — and nothing else. Cleared once consumed or superseded.
+    private(set) var lastInjected: String?
+
+    /// Transcribe the stopped recording, then call back on the main thread with
+    /// the text (empty if nothing usable). No-op if there's no recording.
+    func transcribe(_ completion: @escaping (String) -> Void) {
+        guard let url = recordingURL else { completion(""); return }
+        recordingURL = nil
         status = .transcribing
         let whisper = whisper
         Task.detached { [weak self] in
@@ -140,10 +152,30 @@ final class Voice {
             }
             try? FileManager.default.removeItem(at: url)
             DispatchQueue.main.async {
-                if !text.isEmpty { Keyboard.type(text) }
+                self?.lastTranscript = text
                 self?.status = .ready
-                self?.onFinish?()
+                completion(text)
             }
         }
     }
+
+    /// Paste the transcript into the frontmost app and remember it for undo.
+    func inject(_ text: String) {
+        guard !text.isEmpty else { return }
+        Keyboard.type(text)
+        lastInjected = text
+    }
+
+    /// Delete the last dictation we injected — one backspace per character.
+    /// App-independent (no reliance on the app's own undo), so it works in
+    /// terminals and editors that ignore ⌘Z. Best-effort: do it before editing
+    /// elsewhere, or it deletes from wherever the cursor now sits.
+    func undoLast() {
+        guard let text = lastInjected, !text.isEmpty else { return }
+        for _ in 0..<text.count { Keyboard.press(Key.delete, []) }
+        lastInjected = nil
+    }
+
+    /// Forget the undo buffer (a new dictation or any other action buries it).
+    func clearUndo() { lastInjected = nil }
 }

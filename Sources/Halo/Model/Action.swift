@@ -19,15 +19,25 @@ struct Modifiers: OptionSet, Codable, Equatable {
     }
 }
 
+/// A dictation control verb — the one kind of step that only means anything
+/// mid-dictation. Serializes as `{"do":"send"}`. Code provides this vocabulary;
+/// config composes it into flows.
+///   • dictate — start a voice session (the hub becomes the live recording UI)
+///   • send    — inject the current transcript as text
+///   • cancel  — discard the recording/session without injecting
+///   • undo    — delete the last dictation we injected (app-independent)
+enum Verb: String, Codable, Equatable { case dictate, send, cancel, undo }
+
 /// One unit of work a spoke performs. Serializes to a compact, readable form:
-/// `{"key":"cmd+s"}`, `{"text":"…"}`, `{"paste":0}`, `{"pause":200}`.
+/// `{"key":"cmd+s"}`, `{"text":"…"}`, `{"paste":0}`, `{"pause":200}`, `{"do":"send"}`.
 enum Step: Codable, Equatable {
     case key(code: UInt16, modifiers: Modifiers)   // a keystroke / chord
     case text(String)                              // type literal text
     case paste(recent: Int)                        // paste an entry from clipboard history (0 = latest)
     case pause(milliseconds: Int)                  // wait before the next step
+    case verb(Verb)                                // a dictation control verb (do: …)
 
-    private enum K: String, CodingKey { case key, text, paste, pause }
+    private enum K: String, CodingKey { case key, text, paste, pause, verb = "do" }
 
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: K.self)
@@ -36,6 +46,7 @@ enum Step: Codable, Equatable {
         case let .text(text):           try c.encode(text, forKey: .text)
         case let .paste(recent):        try c.encode(recent, forKey: .paste)
         case let .pause(milliseconds):  try c.encode(milliseconds, forKey: .pause)
+        case let .verb(verb):           try c.encode(verb.rawValue, forKey: .verb)
         }
     }
 
@@ -49,9 +60,11 @@ enum Step: Codable, Equatable {
             self = .paste(recent: recent)
         } else if let ms = try? c.decode(Int.self, forKey: .pause) {
             self = .pause(milliseconds: ms)
+        } else if let raw = try? c.decode(String.self, forKey: .verb), let verb = Verb(rawValue: raw) {
+            self = .verb(verb)
         } else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
-                debugDescription: "Step needs one of: key, text, paste, pause"))
+                debugDescription: "Step needs one of: key, text, paste, pause, do"))
         }
     }
 }

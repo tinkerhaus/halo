@@ -1,8 +1,11 @@
 import AppKit
 
 /// Owns Halo's lifecycle. A menu-bar *accessory* (no Dock icon) that listens for
-/// the summon button, presents the wheel, and runs dictation per the configured
-/// voice mode.
+/// the summon button, presents the wheel, and runs dictation.
+///
+/// Dictation is config-driven: the wheel fires `dictate`/`send`/`cancel`/`undo`
+/// verbs (composed in `config.yaml`), and this controller is where those verbs
+/// actually touch `Voice` and the recording hub.
 final class AppController: NSObject, NSApplicationDelegate {
     let store = HaloStore()
     let voice = Voice()
@@ -10,70 +13,75 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let wheel = WheelController()
     private let summon = Summon()
 
-    /// A hands-free dictation session is active (started on center release; the
-    /// next summon press stops it).
-    private var listening = false
-    /// The summon release immediately after a "stop" press shouldn't open the wheel.
-    private var suppressRelease = false
+    /// A hands-free dictation session is active (started at center; the next
+    /// summon press stops recording and shows the finish ring).
+    private var sessionActive = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
         wheel.haloProvider = { [weak self] in
-            self?.store.reload()
+            guard let self else { return Halo() }
+            self.store.reload()
             let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-            return self?.store.halo(forApp: bundleID) ?? HaloConfig.starter().fallback
+            return self.sessionActive ? self.store.config.finish(forApp: bundleID)
+                                      : self.store.halo(forApp: bundleID)
         }
-        wheel.voiceMode = { [weak self] in self?.store.config.voice.mode ?? .handsFree }
         wheel.canRecord = { [weak self] in self?.voice.isReady ?? false }
-        wheel.onCenterHold = { [weak self] in self?.voice.startRecording() }   // push-to-talk: start
-        wheel.onCenterRelease = { [weak self] in self?.handleCenterRelease() }
+        wheel.hasSession = { [weak self] in self?.sessionActive ?? false }
         wheel.levelProvider = { [weak self] in self?.voice.currentLevel() ?? 0 }
 
-        voice.onFinish = { [weak self] in self?.wheel.endVoiceSession() }
+        // Dictation verbs — composed in config, executed here.
+        ActionRunner.onDictate = { [weak self] in self?.startSession() }
+        ActionRunner.onSend = { [weak self] done in
+            guard let self else { return done() }
+            self.send(done)
+        }
+        ActionRunner.onCancel = { [weak self] in self?.cancelSession() }
+        ActionRunner.onUndo = { [weak self] in self?.voice.undoLast() }
+        ActionRunner.onActed = { [weak self] in self?.voice.clearUndo() }
 
         summon.button = { [weak self] in self?.store.summonButton ?? 4 }
         summon.onPress = { [weak self] in
             guard let self else { return }
-            if self.listening {              // press during a hands-free session → stop it
-                self.stopListeningSession()
-                self.suppressRelease = true
-            } else {
-                self.wheel.present()
-            }
+            if self.sessionActive { self.voice.stopRecording() }   // done talking → finish ring
+            self.wheel.present()
         }
-        summon.onRelease = { [weak self] in
-            guard let self else { return }
-            if self.suppressRelease { self.suppressRelease = false; return }
-            self.wheel.release()
-        }
+        summon.onRelease = { [weak self] in self?.wheel.release() }
         summon.start()
 
         voice.prepare()                      // load the model (downloads on first run)
         requestAccessibilityIfNeeded()
     }
 
-    /// Center was released (hands-free) or push-to-talk hold ended — act per mode.
-    private func handleCenterRelease() {
-        switch store.config.voice.mode {
-        case .pushToTalk:
-            voice.stopAndInject()
-            wheel.markTranscribing()         // hub shows "Transcribing…" until done
-        case .handsFree:
-            startListeningSession()
+    // MARK: - Dictation session
+
+    private func startSession() {
+        guard voice.isReady else { return }
+        sessionActive = true
+        voice.startRecording()
+        wheel.beginVoiceSession()            // hub stays up as the live recording UI
+    }
+
+    /// `send`: transcribe the stopped recording, inject it, then continue the
+    /// step list (e.g. a trailing Return) once the text has landed.
+    private func send(_ done: @escaping () -> Void) {
+        wheel.markTranscribing()             // hub → "Transcribing…"
+        voice.transcribe { [weak self] text in
+            self?.voice.inject(text)
+            self?.endSession()
+            done()
         }
     }
 
-    private func startListeningSession() {
-        listening = true
-        wheel.beginVoiceSession()            // hub stays up as the live recording UI
-        voice.startRecording()
+    private func cancelSession() {
+        voice.cancel()
+        endSession()
     }
 
-    private func stopListeningSession() {
-        listening = false
-        voice.stopAndInject()
-        wheel.markTranscribing()             // hub → "Transcribing…", hides on voice.onFinish
+    private func endSession() {
+        sessionActive = false
+        wheel.endVoiceSession()
     }
 
     /// Summon + keystroke injection need Accessibility. Prompt once.

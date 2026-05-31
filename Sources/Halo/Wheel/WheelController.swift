@@ -5,20 +5,21 @@ import SwiftUI
 /// selection. The panel ignores mouse events — selection is read purely from the
 /// cursor's angle, so the underlying app keeps focus and receives the keystroke.
 ///
-/// Navigation into wells is dwell-based; release is terminal. Dictation depends
-/// on `voiceMode`:
-///   • handsFree  — release at center starts a session (the app shows a pill and
-///                  stops on the next summon press).
-///   • pushToTalk — dwell at center starts recording (hub shows it); release sends.
+/// Navigation into wells is dwell-based; release is terminal. What release does:
+///   • on a spoke   → fire its action
+///   • in the wedge → cancel (discard a dictation if one is active, else dismiss)
+///   • at center    → the halo's `center` action (root default: dictate)
+///
+/// Dictation: release-at-center starts a hands-free session (the hub becomes the
+/// live recording UI). Pressing summon again presents the *finish* halo — release
+/// to Send / Send+Return / Cancel. The session's verbs (`dictate`/`send`/`cancel`)
+/// run through `ActionRunner` and manage the hub themselves, so the controller
+/// only dismisses for plain keystroke actions.
 final class WheelController {
     var haloProvider: () -> Halo = { Halo() }
-
-    // Voice hooks, interpreted by the app per the active mode.
-    var voiceMode: () -> VoiceMode = { .handsFree }
-    var canRecord: () -> Bool = { false }
-    var onCenterHold: () -> Void = {}      // push-to-talk: start recording
-    var onCenterRelease: () -> Void = {}   // push-to-talk: send · hands-free: start session
-    var levelProvider: () -> Float = { 0 } // current mic level for the waveform
+    var canRecord: () -> Bool = { false }      // dictation model is ready
+    var hasSession: () -> Bool = { false }     // a hands-free session is active
+    var levelProvider: () -> Float = { 0 }     // current mic level for the waveform
 
     private var levelTimer: Timer?
 
@@ -32,7 +33,7 @@ final class WheelController {
     private var stack: [Halo] = []
     private var current: Halo { stack.last ?? Halo() }
 
-    private enum Dwell: Equatable { case none, well(Int), center, recordCenter }
+    private enum Dwell: Equatable { case none, well(Int), center }
     private var dwell: Dwell = .none
     private var dwellFrames = 0
     private let dwellNeeded = 18    // ~0.3s at 60 Hz
@@ -43,6 +44,8 @@ final class WheelController {
 
     // MARK: - Lifecycle
 
+    /// Show the wheel for the current halo (action wheel, or the finish ring when
+    /// a session is active — the provider decides).
     func present() {
         ensurePanel()
         hideToken += 1
@@ -55,19 +58,41 @@ final class WheelController {
     }
 
     func release() {
-        if model.recording {                  // push-to-talk: release sends (hub stays for transcribing)
-            onCenterRelease()
-            return
-        }
-        let wedge = model.inWedge
-        let atRoot = stack.count == 1
         let spoke = model.highlighted.flatMap { current.spokes.indices.contains($0) ? current.spokes[$0] : nil }
-        if spoke == nil, !wedge, atRoot, canRecord(), voiceMode() == .handsFree {
-            onCenterRelease()                  // hands-free: start a session (hub stays up)
+        if let spoke {
+            if case .performs(let action) = spoke.content { fire(action) } else { dismiss() }
             return
         }
-        dismiss()
-        if let spoke, case .performs(let action) = spoke.content { ActionRunner.run(action) }
+        if model.inWedge {
+            if hasSession() { fire(Action([.verb(.cancel)])) } else { dismiss() }
+            return
+        }
+        // Center.
+        if let action = current.center {
+            fire(action)
+        } else if stack.count == 1, canRecord() {
+            fire(Action([.verb(.dictate)]))     // root default
+        } else {
+            dismiss()                            // sub-ring center, or model not ready
+        }
+    }
+
+    /// Run an action. Session verbs (dictate/send/cancel) drive the hub and its
+    /// eventual dismissal themselves; everything else dismisses the wheel first.
+    private func fire(_ action: Action) {
+        if managesSession(action) {
+            ActionRunner.run(action)
+        } else {
+            dismiss()
+            ActionRunner.run(action)
+        }
+    }
+
+    private func managesSession(_ action: Action) -> Bool {
+        action.steps.contains {
+            if case .verb(let v) = $0 { return v != .undo }
+            return false
+        }
     }
 
     func dismiss() {
@@ -124,7 +149,7 @@ final class WheelController {
 
     private func stopLevelTimer() { levelTimer?.invalidate(); levelTimer = nil }
 
-    // MARK: - Levels
+    // MARK: - Rendering
 
     private func render() {
         model.spokes = current.spokes.enumerated().map { i, s in
@@ -166,7 +191,6 @@ final class WheelController {
 
     private func track() {
         guard let panel else { return }
-        if model.recording { return }          // push-to-talk hold: ignore movement
         let mouse = NSEvent.mouseLocation
         let dx = mouse.x - panel.frame.midX
         let dy = mouse.y - panel.frame.midY
@@ -176,12 +200,11 @@ final class WheelController {
             if stack.count > 1 {
                 model.modelLoading = false
                 advanceDwell(.center)                          // sub-ring: rest to back out
-            } else if !canRecord() {
-                model.modelLoading = true                      // model still loading
-                advanceDwell(.none)
             } else {
-                model.modelLoading = false
-                advanceDwell(voiceMode() == .pushToTalk ? .recordCenter : .none)
+                // Root center fires dictate on release; show "loading" only while
+                // that default applies and the model isn't ready yet.
+                model.modelLoading = current.center == nil && !canRecord()
+                advanceDwell(.none)
             }
             return
         }
@@ -204,7 +227,6 @@ final class WheelController {
         switch target {
         case .well(let i):   expand(i)
         case .center:        pop()
-        case .recordCenter:  model.recording = true; model.levels = []; onCenterHold(); startLevelTimer()
         case .none:          break
         }
     }

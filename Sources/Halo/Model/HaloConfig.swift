@@ -9,22 +9,18 @@ enum Key {
     static let slash: UInt16 = 44, leftBracket: UInt16 = 33, rightBracket: UInt16 = 30
 }
 
-/// How dictation is triggered from the wheel's center.
-enum VoiceMode: String, Codable, Equatable {
-    case handsFree    // release at center → start a session; press summon again to stop
-    case pushToTalk   // hold at center to talk; release to send
-}
-
-/// Voice / dictation options.
+/// Voice / dictation options. `finish` is the global default finish ring (shown
+/// when you stop a hands-free session); a profile may override it, and if both
+/// are omitted a built-in plain-Send ring is used.
 struct VoiceConfig: Codable, Equatable {
-    var mode: VoiceMode = .handsFree
+    var finish: Halo?
 
-    init(mode: VoiceMode = .handsFree) { self.mode = mode }
+    init(finish: Halo? = nil) { self.finish = finish }
 
-    enum CodingKeys: String, CodingKey { case mode }
+    enum CodingKeys: String, CodingKey { case finish }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        mode = (try? c.decodeIfPresent(VoiceMode.self, forKey: .mode)) ?? .handsFree
+        finish = try? c.decodeIfPresent(Halo.self, forKey: .finish)
     }
 }
 
@@ -36,16 +32,30 @@ struct Profile: Equatable, Identifiable {
     var name: String
     var appBundleIDs: [String]
     var halo: Halo
+    var finish: Halo?            // optional per-app finish ring (overrides voice.finish)
+
+    init(name: String, appBundleIDs: [String], halo: Halo, finish: Halo? = nil) {
+        self.name = name
+        self.appBundleIDs = appBundleIDs
+        self.halo = halo
+        self.finish = finish
+    }
+
+    // `id` is runtime-only — exclude it from equality (see Spoke).
+    static func == (a: Profile, b: Profile) -> Bool {
+        a.name == b.name && a.appBundleIDs == b.appBundleIDs && a.halo == b.halo && a.finish == b.finish
+    }
 }
 
 extension Profile: Codable {
-    private enum K: String, CodingKey { case name, apps, halo }
+    private enum K: String, CodingKey { case name, apps, halo, finish }
 
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: K.self)
         try c.encode(name, forKey: .name)
         try c.encode(appBundleIDs, forKey: .apps)
         try c.encode(halo, forKey: .halo)
+        try c.encodeIfPresent(finish, forKey: .finish)
     }
 
     init(from decoder: Decoder) throws {
@@ -54,6 +64,7 @@ extension Profile: Codable {
         name = (try? c.decodeIfPresent(String.self, forKey: .name)) ?? ""
         appBundleIDs = (try? c.decodeIfPresent([String].self, forKey: .apps)) ?? []
         halo = (try? c.decodeIfPresent(Halo.self, forKey: .halo)) ?? Halo()
+        finish = try? c.decodeIfPresent(Halo.self, forKey: .finish)
     }
 }
 
@@ -86,20 +97,56 @@ struct HaloConfig: Codable, Equatable {
         profiles = (try? c.decodeIfPresent([Profile].self, forKey: .profiles)) ?? base.profiles
     }
 
+    /// The profile matching a frontmost app — most specific (fewest apps) wins,
+    /// so a single-app profile overrides a group it also belongs to.
+    private func profile(forApp bundleID: String?) -> Profile? {
+        guard let bundleID else { return nil }
+        return profiles
+            .filter { $0.appBundleIDs.contains(bundleID) }
+            .min { $0.appBundleIDs.count < $1.appBundleIDs.count }
+    }
+
     /// The halo to summon for a given frontmost app.
     func halo(forApp bundleID: String?) -> Halo {
-        if let bundleID, let match = profiles.first(where: { $0.appBundleIDs.contains(bundleID) }) {
-            return match.halo
-        }
-        return fallback
+        profile(forApp: bundleID)?.halo ?? fallback
+    }
+
+    /// The finish ring for a given frontmost app: the matched profile's, else the
+    /// global `voice.finish`, else the built-in plain-Send default.
+    func finish(forApp bundleID: String?) -> Halo {
+        profile(forApp: bundleID)?.finish ?? voice.finish ?? HaloConfig.defaultFinish()
     }
 
     // MARK: - Starter configuration
 
     private static func arc(_ span: Int) -> Arc { Arc(spanDegrees: span, centerDegrees: -90) }
 
+    /// Inject the transcript, optionally pressing Return after.
+    private static func send(enter: Bool = false) -> Action {
+        Action(enter ? [.verb(.send), .key(code: Key.enter, modifiers: [])] : [.verb(.send)])
+    }
+
+    /// Built-in finish ring when none is configured: release-at-center sends the
+    /// text as-is (safe — no surprise Return), with Submit (+Return) and Cancel
+    /// one flick away.
+    static func defaultFinish() -> Halo {
+        Halo(arc: arc(200), radius: 108, spokes: [
+            .action("Submit", "return", send(enter: true)),
+            .action("Cancel", "xmark", Action([.verb(.cancel)])),
+        ], center: send())
+    }
+
+    /// Finish ring for chat-like apps: release-at-center submits (Send+Return),
+    /// with a Send-only and Cancel flick.
+    private static func submitFinish() -> Halo {
+        Halo(arc: arc(200), radius: 108, spokes: [
+            .action("Send only", "arrow.up", send()),
+            .action("Cancel", "xmark", Action([.verb(.cancel)])),
+        ], center: send(enter: true))
+    }
+
     static func starter() -> HaloConfig {
-        HaloConfig(summonButton: 4, voice: VoiceConfig(mode: .handsFree), fallback: fallbackHalo(),
+        HaloConfig(summonButton: 4, voice: VoiceConfig(finish: defaultFinish()), fallback: fallbackHalo(),
                    profiles: [terminalProfile(), browserProfile(), editorProfile()])
     }
 
@@ -134,10 +181,12 @@ struct HaloConfig: Codable, Equatable {
                         .action("⇧Tab", "arrow.left.to.line", .key(Key.tab, .shift)),
                         .action("Search", "magnifyingglass", .key(Key.r, .control)),
                         .action("Clear", "delete.left", .key(Key.u, .control)),
+                        .action("Undo voice", "arrow.uturn.backward", Action([.verb(.undo)])),
                         .action("EOF", "eject", .key(Key.d, .control)),
                         .action("Cls", "rectangle.dashed", .key(Key.l, .control)),
                     ])),
-                ]))
+                ]),
+                finish: submitFinish())
     }
 
     private static func browserProfile() -> Profile {
@@ -155,8 +204,10 @@ struct HaloConfig: Codable, Equatable {
                         .action("Address", "link", .key(Key.l, .command)),
                         .action("Next Tab", "chevron.right.2", .key(Key.tab, .control)),
                         .action("Prev Tab", "chevron.left.2", .key(Key.tab, [.control, .shift])),
+                        .action("Undo voice", "arrow.uturn.backward", Action([.verb(.undo)])),
                     ])),
-                ]))
+                ]),
+                finish: submitFinish())
     }
 
     private static func editorProfile() -> Profile {
