@@ -1,18 +1,16 @@
 ---
 name: halo-config
-description: Configure the Halo macOS app — a mouse-summoned radial command wheel with on-device voice dictation — by editing its config.yaml. Use when the user wants to set up, customize, or add commands, wheels, spokes, per-app profiles, macros, dictation, or shell-scripting actions to Halo, or edit ~/Library/Application Support/Halo/config.yaml. Self-contained: works as a skill, or paste it into any LLM / point an agent at this file's raw URL.
+description: Configure the Halo macOS app — a mouse-summoned radial command wheel with on-device voice dictation — by editing its config.yaml. Use when the user wants to set up, customize, or add commands, wheels, spokes, per-app profiles, macros, dictation, or shell-scripting actions to Halo, or edit ~/Library/Application Support/Halo/config.yaml.
 ---
 
 # Configure Halo (`config.yaml`)
 
-This one file is everything an LLM needs to read or write a user's **Halo** configuration.
-Paste it into any chat (ChatGPT, Claude, …) or point your agent at it, then ask for changes
-like *"add a Save spoke to my browser wheel"* — the LLM edits one YAML file.
+Halo is a macOS menu-bar app: the user holds a mouse button anywhere → a ring of "spokes"
+blooms at the cursor → they flick toward a spoke and release to fire it (a keystroke, a macro,
+text, or a shell command); releasing at the **center** dictates by voice. The wheel
+auto-switches its layout based on the frontmost app.
 
-**Halo** is a macOS menu-bar app: hold a mouse button anywhere → a ring of "spokes" blooms at
-the cursor → flick toward a spoke and release to fire it (a keystroke, a macro, text, or a
-shell command); release at the **center** to dictate by voice. The wheel auto-switches its
-layout based on the frontmost app. **`config.yaml` is the single source of truth.**
+`config.yaml` is the single source of truth. Edit it to set up or change the user's wheels.
 
 ## The file
 
@@ -20,15 +18,15 @@ layout based on the frontmost app. **`config.yaml` is the single source of truth
 ~/Library/Application Support/Halo/config.yaml
 ```
 
-YAML. Edits apply on the **next summon** — the file is watched live (no restart, no UI).
+YAML. Edits apply on the user's **next summon** — the file is watched live (no restart, no UI).
 
-## How to edit it (for the agent)
+## Editing it
 
-1. **Read** the user's current file first. The app re-emits a `#`-comment header documenting
-   the exact schema for their installed version — trust it.
-2. **Make the minimal change** (add/edit a spoke, profile, finish ring…). Omit any field to
-   take its default; the decoder is lenient.
-3. **Save**, then tell the user to summon the wheel to test.
+1. Read the user's current file first. The app re-emits a `#`-comment header documenting the
+   exact schema for their installed version — trust it over this doc if they ever differ.
+2. Make the minimal change (add/edit a spoke, profile, finish ring…). Omit any field to take
+   its default; the decoder is lenient.
+3. Save, then tell the user to summon the wheel to test.
 
 > ⚠️ The app **rewrites the whole file** when it saves (e.g. from its visual editor) and
 > regenerates the header — so **any comments you add are dropped.** Don't store notes inside it.
@@ -132,7 +130,7 @@ center: [ {do: send}, {key: return} ]   # finish ring: send the dictation, then 
 
 ---
 
-## Examples (paste-ready)
+## Examples
 
 ### Browser profile
 ```yaml
