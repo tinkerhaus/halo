@@ -34,8 +34,7 @@ struct OnboardingView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
-                Image(nsImage: NSApp.applicationIconImage)
-                    .resizable().frame(width: 52, height: 52)
+                HaloLogo(size: 52)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Welcome to Halo").font(.system(size: 26, weight: .semibold, design: .rounded))
                     Text("by tinkerhaus").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)

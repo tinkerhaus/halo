@@ -26,7 +26,7 @@ struct SettingsView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 10) {
-                Image(systemName: "circle.dotted.circle").font(.system(size: 24, weight: .thin))
+                HaloLogo(size: 28)
                 Text("Halo").font(.system(size: 26, weight: .semibold, design: .rounded))
             }
             Text("Hold your summon button anywhere, flick to a spoke, release to fire it.")

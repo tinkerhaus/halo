@@ -1,4 +1,20 @@
 import SwiftUI
+import AppKit
+
+extension NSImage {
+    /// The Halo brand mark — the app icon cropped a touch tighter for inline use.
+    /// One asset, used for every in-app logo spot (and mirrored on the website).
+    static let haloLogo: NSImage = Bundle.module.url(forResource: "Logo", withExtension: "png")
+        .flatMap { NSImage(contentsOf: $0) } ?? NSApp.applicationIconImage
+}
+
+/// The Halo logo at a given size — use this anywhere the brand mark appears.
+struct HaloLogo: View {
+    var size: CGFloat
+    var body: some View {
+        Image(nsImage: .haloLogo).resizable().frame(width: size, height: size)
+    }
+}
 
 /// Halo's signature dark, faintly-lit backdrop.
 struct AmbientBackground: View {

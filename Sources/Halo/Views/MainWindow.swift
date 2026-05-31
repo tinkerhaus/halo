@@ -97,7 +97,7 @@ struct MainWindow: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(spacing: 12) {
-                    Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 56, height: 56)
+                    HaloLogo(size: 56)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Halo").font(.system(size: 26, weight: .semibold, design: .rounded))
                         Text("Version \(Self.version) · by tinkerhaus").font(.system(size: 12)).foregroundStyle(.secondary)
