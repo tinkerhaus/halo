@@ -13,7 +13,7 @@ import WhisperKit
 @Observable
 final class Voice {
     enum Status: Equatable {
-        case idle, loading, ready, recording, transcribing
+        case idle, downloading(Double), loadingModel, ready, recording, transcribing
         case failed(String)
     }
     private(set) var status: Status = .idle
@@ -23,6 +23,19 @@ final class Voice {
         switch status { case .ready, .recording, .transcribing: return true; default: return false }
     }
 
+    /// A short, glanceable description for the menu bar.
+    var statusText: String {
+        switch status {
+        case .idle:                  return "Starting…"
+        case .downloading(let p):    return "Downloading model… \(Int(p * 100))%"
+        case .loadingModel:          return "Loading model…"
+        case .ready:                 return "Ready"
+        case .recording:             return "Recording…"
+        case .transcribing:          return "Transcribing…"
+        case .failed(let message):   return "Error: \(message)"
+        }
+    }
+
     private let model = "openai_whisper-large-v3-v20240930_turbo"
     private let repo = "haloapp/whisperkit-coreml"
 
@@ -30,16 +43,20 @@ final class Voice {
     private var recorder: AVAudioRecorder?
     private var recordingURL: URL?
 
-    /// Load the model in the background (downloads from HF on first run). Call at launch.
+    /// Download (with progress) then load the model in the background. Call at launch.
     func prepare() {
         guard status == .idle else { return }
-        status = .loading
+        status = .downloading(0)
         AVCaptureDevice.requestAccess(for: .audio) { _ in }    // prompt mic early
         Task.detached { [model, repo, weak self] in
             do {
-                let config = WhisperKitConfig(model: model, modelRepo: repo,
-                                              verbose: false, logLevel: .error,
-                                              prewarm: true, load: true, download: true)
+                let folder = try await WhisperKit.download(variant: model, from: repo) { progress in
+                    DispatchQueue.main.async { self?.status = .downloading(progress.fractionCompleted) }
+                }
+                DispatchQueue.main.async { self?.status = .loadingModel }
+                var config = WhisperKitConfig(model: model, verbose: false, logLevel: .error,
+                                              prewarm: true, load: true, download: false)
+                config.modelFolder = folder.path
                 let pipe = try await WhisperKit(config)
                 DispatchQueue.main.async { self?.whisper = pipe; self?.status = .ready }
             } catch {

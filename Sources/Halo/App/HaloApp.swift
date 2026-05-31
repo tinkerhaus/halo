@@ -19,6 +19,7 @@ struct HaloApp: App {
     var body: some Scene {
         MenuBarExtra {
             MenuBarMenu()
+                .environment(controller.voice)
         } label: {
             Image(nsImage: Self.menuBarIcon)
         }

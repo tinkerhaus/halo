@@ -4,10 +4,10 @@ import AppKit
 /// the summon button and presents the wheel over the frontmost app.
 final class AppController: NSObject, NSApplicationDelegate {
     let store = HaloStore()
+    let voice = Voice()
 
     private let wheel = WheelController()
     private let summon = Summon()
-    private let voice = Voice()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
