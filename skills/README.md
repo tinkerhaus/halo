@@ -1,42 +1,20 @@
-# Halo agent skills
+# Configure Halo with any LLM
 
-Skills that let an LLM coding agent (Claude Code, etc.) set up and customize **Halo** for
-you — its config is the product, so an agent can do it all by editing one YAML file.
+[`halo-config/SKILL.md`](halo-config/SKILL.md) is **one self-contained file** that teaches an
+LLM how to write your Halo `config.yaml`. No install machinery — use it however you like:
 
-## `halo-config`
+**Paste it.** Copy the file's contents into ChatGPT, Claude, or any chat, then ask:
+> "Add a reopen-last-tab spoke to my Halo browser wheel."
 
-Teaches an agent the full `config.yaml` schema and how to edit it: spokes, per-app profiles,
-wells, keystrokes/macros, dictation, and shell scripting. Once installed, just ask:
+**Point at it.** Give your agent the raw URL:
+> https://raw.githubusercontent.com/tinkerhaus/halo/main/skills/halo-config/SKILL.md
 
-> "Add a spoke to my browser wheel that reopens the last closed tab."
-> "Make a Slack profile with a wheel for reactions and thread replies."
-> "When I dictate in my terminal, send it to my coding agent instead of pasting."
-
-## Install (Claude Code)
-
-```bash
-# clone + copy the skill into your skills folder
-git clone https://github.com/tinkerhaus/halo
-mkdir -p ~/.claude/skills
-cp -r halo/skills/halo-config ~/.claude/skills/
-```
-
-Or without cloning the whole repo:
-
+**Install it (Claude Code).** It's also a valid skill — one file:
 ```bash
 mkdir -p ~/.claude/skills/halo-config
-curl -sL https://github.com/tinkerhaus/halo/archive/refs/heads/main.tar.gz \
-  | tar -xz -C ~/.claude/skills/halo-config --strip-components=3 halo-main/skills/halo-config
+curl -sL https://raw.githubusercontent.com/tinkerhaus/halo/main/skills/halo-config/SKILL.md \
+  -o ~/.claude/skills/halo-config/SKILL.md
 ```
 
-Restart your agent so it picks up the new skill. Then ask it to configure Halo.
-
-## Use it without installing
-
-Point your agent at the raw file:
-
-> "Read https://raw.githubusercontent.com/tinkerhaus/halo/main/skills/halo-config/SKILL.md
-> and use it to add a Save (⌘S) spoke to my Halo default wheel."
-
-The agent edits `~/Library/Application Support/Halo/config.yaml`; your changes apply on the
-next summon (the file is watched live).
+Either way, the LLM edits `~/Library/Application Support/Halo/config.yaml`; your changes apply
+on the next summon.
