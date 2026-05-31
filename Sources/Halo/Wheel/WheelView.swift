@@ -27,7 +27,7 @@ struct WheelView: View {
                 .opacity(Double(min(1, reveal * 1.6)))
                 .position(centerPoint)
 
-            if !model.recording {
+            if !model.recording && !model.transcribing {
                 ForEach(model.spokes) { spoke in
                     spokeView(spoke)
                         .scaleEffect(reveal)
@@ -65,11 +65,15 @@ struct WheelView: View {
 
     private var hubView: some View {
         let h = model.highlighted
-        return VStack(spacing: 4) {
+        return VStack(spacing: 5) {
             if model.recording {
-                Image(systemName: "waveform").font(.system(size: 21, weight: .semibold))
-                    .foregroundStyle(Color(red: 1.0, green: 0.35, blue: 0.45))
-                Text("Recording…").font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.7))
+                WaveformView(levels: model.levels, tint: Color(red: 1.0, green: 0.35, blue: 0.45))
+                    .frame(width: 72, height: 28)
+                Text("Listening…").font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.7))
+            } else if model.transcribing {
+                WaveformView(levels: model.levels, tint: .white.opacity(0.35))
+                    .frame(width: 72, height: 28)
+                Text("Transcribing…").font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.7))
             } else if model.modelLoading {
                 Image(systemName: "arrow.down.circle.dotted").font(.system(size: 20, weight: .semibold))
                 Text("Loading model…").font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.6))
@@ -110,5 +114,26 @@ struct WheelView: View {
         .shadow(color: .black.opacity(0.45), radius: isHot ? 14 : 7, y: 3)
         .scaleEffect(isHot ? 1.42 : 1)
         .zIndex(isHot ? 1 : 0)
+    }
+}
+
+/// A simple live waveform — recent mic levels (0…1) as centered rounded bars.
+struct WaveformView: View {
+    let levels: [Float]
+    var tint: Color = .white
+
+    var body: some View {
+        Canvas { ctx, size in
+            guard !levels.isEmpty else { return }
+            let count = levels.count
+            let slot = size.width / CGFloat(count)
+            let barW = max(1.2, slot * 0.55)
+            for (i, level) in levels.enumerated() {
+                let h = max(2, CGFloat(level) * size.height)
+                let x = CGFloat(i) * slot + (slot - barW) / 2
+                let rect = CGRect(x: x, y: (size.height - h) / 2, width: barW, height: h)
+                ctx.fill(Path(roundedRect: rect, cornerRadius: barW / 2), with: .color(tint))
+            }
+        }
     }
 }

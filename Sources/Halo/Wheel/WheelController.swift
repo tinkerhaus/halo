@@ -18,6 +18,9 @@ final class WheelController {
     var canRecord: () -> Bool = { false }
     var onCenterHold: () -> Void = {}      // push-to-talk: start recording
     var onCenterRelease: () -> Void = {}   // push-to-talk: send · hands-free: start session
+    var levelProvider: () -> Float = { 0 } // current mic level for the waveform
+
+    private var levelTimer: Timer?
 
     private let model = WheelModel()
     private var panel: NSPanel?
@@ -52,26 +55,26 @@ final class WheelController {
     }
 
     func release() {
-        if model.recording {                  // push-to-talk: release sends
+        if model.recording {                  // push-to-talk: release sends (hub stays for transcribing)
             onCenterRelease()
-            dismiss()
             return
         }
         let wedge = model.inWedge
         let atRoot = stack.count == 1
         let spoke = model.highlighted.flatMap { current.spokes.indices.contains($0) ? current.spokes[$0] : nil }
-        dismiss()
-        if let spoke {
-            if case .performs(let action) = spoke.content { ActionRunner.run(action) }
-        } else if !wedge && atRoot && canRecord() && voiceMode() == .handsFree {
-            onCenterRelease()                  // hands-free: start a dictation session
+        if spoke == nil, !wedge, atRoot, canRecord(), voiceMode() == .handsFree {
+            onCenterRelease()                  // hands-free: start a session (hub stays up)
+            return
         }
+        dismiss()
+        if let spoke, case .performs(let action) = spoke.content { ActionRunner.run(action) }
     }
 
     func dismiss() {
         tracker?.invalidate(); tracker = nil
+        stopLevelTimer()
         dwell = .none; dwellFrames = 0
-        model.recording = false; model.modelLoading = false
+        model.recording = false; model.transcribing = false; model.modelLoading = false
         model.collapseID += 1
         hideToken += 1
         let token = hideToken
@@ -80,8 +83,46 @@ final class WheelController {
             self.panel?.orderOut(nil)
             self.stack = []
             self.model.highlighted = nil; self.model.inWedge = false
+            self.model.levels = []
         }
     }
+
+    // MARK: - Voice session (the hub *is* the recording UI — no separate pill)
+
+    /// Hands-free: keep the hub on screen as the live recording UI.
+    func beginVoiceSession() {
+        hideToken += 1                          // cancel any pending hide
+        tracker?.invalidate(); tracker = nil
+        model.highlighted = nil; model.inWedge = false; model.modelLoading = false
+        model.transcribing = false
+        model.recording = true
+        model.levels = []
+        startLevelTimer()
+    }
+
+    /// Recording stopped — show transcribing in the hub until it completes.
+    func markTranscribing() {
+        stopLevelTimer()
+        model.recording = false
+        model.transcribing = true
+    }
+
+    /// Session finished — collapse the hub away.
+    func endVoiceSession() {
+        model.transcribing = false
+        dismiss()
+    }
+
+    private func startLevelTimer() {
+        levelTimer?.invalidate()
+        levelTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.model.levels.append(self.levelProvider())
+            if self.model.levels.count > 48 { self.model.levels.removeFirst(self.model.levels.count - 48) }
+        }
+    }
+
+    private func stopLevelTimer() { levelTimer?.invalidate(); levelTimer = nil }
 
     // MARK: - Levels
 
@@ -95,7 +136,9 @@ final class WheelController {
         model.highlighted = nil
         model.inWedge = false
         model.recording = false
+        model.transcribing = false
         model.modelLoading = false
+        model.levels = []
         model.revealID += 1
     }
 
@@ -161,7 +204,7 @@ final class WheelController {
         switch target {
         case .well(let i):   expand(i)
         case .center:        pop()
-        case .recordCenter:  model.recording = true; onCenterHold()
+        case .recordCenter:  model.recording = true; model.levels = []; onCenterHold(); startLevelTimer()
         case .none:          break
         }
     }

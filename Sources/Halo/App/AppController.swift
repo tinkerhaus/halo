@@ -9,7 +9,6 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private let wheel = WheelController()
     private let summon = Summon()
-    private let pill = PillController()
 
     /// A hands-free dictation session is active (started on center release; the
     /// next summon press stops it).
@@ -29,8 +28,9 @@ final class AppController: NSObject, NSApplicationDelegate {
         wheel.canRecord = { [weak self] in self?.voice.isReady ?? false }
         wheel.onCenterHold = { [weak self] in self?.voice.startRecording() }   // push-to-talk: start
         wheel.onCenterRelease = { [weak self] in self?.handleCenterRelease() }
+        wheel.levelProvider = { [weak self] in self?.voice.currentLevel() ?? 0 }
 
-        voice.onFinish = { [weak self] in self?.pill.hide() }
+        voice.onFinish = { [weak self] in self?.wheel.endVoiceSession() }
 
         summon.button = { [weak self] in self?.store.summonButton ?? 4 }
         summon.onPress = { [weak self] in
@@ -56,20 +56,24 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// Center was released (hands-free) or push-to-talk hold ended — act per mode.
     private func handleCenterRelease() {
         switch store.config.voice.mode {
-        case .pushToTalk: voice.stopAndInject()
-        case .handsFree:  startListeningSession()
+        case .pushToTalk:
+            voice.stopAndInject()
+            wheel.markTranscribing()         // hub shows "Transcribing…" until done
+        case .handsFree:
+            startListeningSession()
         }
     }
 
     private func startListeningSession() {
         listening = true
-        pill.show(voice: voice, near: NSEvent.mouseLocation)
+        wheel.beginVoiceSession()            // hub stays up as the live recording UI
         voice.startRecording()
     }
 
     private func stopListeningSession() {
         listening = false
-        voice.stopAndInject()                // pill shows "Transcribing…" then hides via voice.onFinish
+        voice.stopAndInject()
+        wheel.markTranscribing()             // hub → "Transcribing…", hides on voice.onFinish
     }
 
     /// Summon + keystroke injection need Accessibility. Prompt once.

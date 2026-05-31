@@ -81,6 +81,7 @@ final class Voice {
         ]
         do {
             let recorder = try AVAudioRecorder(url: url, settings: settings)
+            recorder.isMeteringEnabled = true
             recorder.record()
             self.recorder = recorder
             self.recordingURL = url
@@ -88,6 +89,15 @@ final class Voice {
         } catch {
             self.status = .failed(error.localizedDescription)
         }
+    }
+
+    /// Current mic loudness, 0…1 — for the live waveform. 0 when not recording.
+    func currentLevel() -> Float {
+        guard let recorder, recorder.isRecording else { return 0 }
+        recorder.updateMeters()
+        let db = recorder.averagePower(forChannel: 0)   // ~ -160 … 0 dBFS
+        let floor: Float = -55
+        return min(1, max(0, (db - floor) / -floor))
     }
 
     /// Discard the in-progress recording without transcribing.

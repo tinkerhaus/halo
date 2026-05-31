@@ -28,6 +28,10 @@ final class WheelModel {
     var collapseID = 0
     /// Center hovered but the voice model isn't ready yet.
     var modelLoading = false
-    /// Push-to-talk: holding at center is recording (drives the hub indicator).
+    /// A dictation session is active — the hub becomes the recording UI.
     var recording = false
+    /// Transcription is running (session winding down).
+    var transcribing = false
+    /// Recent mic levels (0…1) for the live waveform in the hub.
+    var levels: [Float] = []
 }
