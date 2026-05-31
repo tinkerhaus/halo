@@ -5,7 +5,7 @@ import WhisperKit
 
 /// On-device dictation. Records the mic while you hold at the wheel's center,
 /// then transcribes locally with WhisperKit and types the text into the
-/// frontmost app. The model is downloaded once from `haloapp/whisperkit-coreml`
+/// frontmost app. The model is downloaded once from `tinkerhaus/whisperkit-coreml`
 /// (not bundled), so the app ships small.
 ///
 /// Calls are made from the main thread (the wheel runs there); WhisperKit's
@@ -37,7 +37,7 @@ final class Voice {
     }
 
     private let model = "openai_whisper-large-v3-v20240930_turbo"
-    private let repo = "haloapp/whisperkit-coreml"
+    private let repo = "tinkerhaus/whisperkit-coreml"
 
     private var whisper: WhisperKit?
     private var recorder: AVAudioRecorder?

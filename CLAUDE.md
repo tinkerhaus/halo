@@ -92,7 +92,7 @@ allowed as the summon button.
 ## Voice / model distribution
 
 Dictation uses WhisperKit. The model is **not bundled** — it's downloaded on first
-launch from the Hugging Face repo `haloapp/whisperkit-coreml`
+launch from the Hugging Face repo `tinkerhaus/whisperkit-coreml`
 (variant `openai_whisper-large-v3-v20240930_turbo`), so the `.app` stays small. Load
 status (download %, ready, recording, transcribing) shows in the menu-bar menu.
 
