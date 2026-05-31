@@ -4,7 +4,6 @@ import AppKit
 /// the summon button and presents the wheel over the frontmost app.
 final class AppController: NSObject, NSApplicationDelegate {
     let store = HaloStore()
-    let preferences = Preferences()
 
     private let wheel = WheelController()
     private let summon = Summon()
@@ -17,10 +16,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         wheel.haloProvider = { [weak self] in
             self?.store.reload()
             let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-            return self?.store.halo(forApp: bundleID) ?? Configuration.starter().fallback
+            return self?.store.halo(forApp: bundleID) ?? HaloConfig.starter().fallback
         }
 
-        summon.button = { [weak self] in self?.preferences.summonButton ?? 4 }
+        summon.button = { [weak self] in self?.store.summonButton ?? 4 }
         summon.onPress = { [weak self] in self?.wheel.present() }
         summon.onRelease = { [weak self] in self?.wheel.release() }
         summon.start()

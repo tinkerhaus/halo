@@ -4,12 +4,10 @@ import AppKit
 /// Halo's settings. For now: how the wheel is summoned, and where its config
 /// lives. The wheel editor (profiles, spokes, sounds, voice) lands next.
 struct SettingsView: View {
-    @Environment(Preferences.self) private var prefs
     @Environment(HaloStore.self) private var store
     @State private var recorder = ButtonRecorder()
 
     var body: some View {
-        @Bindable var prefs = prefs
         ZStack {
             AmbientBackground()
             ScrollView {
@@ -46,10 +44,10 @@ struct SettingsView: View {
                         Text("Click any mouse button…").foregroundStyle(.orange)
                         Button("Cancel") { recorder.stop() }.buttonStyle(.borderless)
                     } else {
-                        Text(mouseButtonName(prefs.summonButton))
+                        Text(mouseButtonName(store.summonButton))
                             .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
                         Button("Change") {
-                            recorder.record { prefs.summonButton = $0 }
+                            recorder.record { store.summonButton = $0 }
                         }
                         .buttonStyle(.bordered)
                     }

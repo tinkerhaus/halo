@@ -12,6 +12,19 @@ struct Arc: Codable, Equatable {
     /// Past this, a halo would close into a ring and lose its cancel wedge.
     static let maxSpanDegrees: Double = 330
 
+    init(spanDegrees: Double = 200, centerDegrees: Double = -90) {
+        self.spanDegrees = spanDegrees
+        self.centerDegrees = centerDegrees
+    }
+
+    enum CodingKeys: String, CodingKey { case spanDegrees, centerDegrees }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        spanDegrees = (try? c.decodeIfPresent(Double.self, forKey: .spanDegrees)) ?? 200
+        centerDegrees = (try? c.decodeIfPresent(Double.self, forKey: .centerDegrees)) ?? -90
+    }
+
     var span: Angle { .degrees(clampedSpan) }
     var center: Angle { .degrees(centerDegrees) }
     private var clampedSpan: Double { min(max(spanDegrees, 0), Arc.maxSpanDegrees) }

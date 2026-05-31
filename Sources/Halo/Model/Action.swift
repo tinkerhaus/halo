@@ -19,12 +19,41 @@ struct Modifiers: OptionSet, Codable, Equatable {
     }
 }
 
-/// One unit of work a spoke performs.
+/// One unit of work a spoke performs. Serializes to a compact, readable form:
+/// `{"key":"cmd+s"}`, `{"text":"…"}`, `{"paste":0}`, `{"pause":200}`.
 enum Step: Codable, Equatable {
     case key(code: UInt16, modifiers: Modifiers)   // a keystroke / chord
     case text(String)                              // type literal text
     case paste(recent: Int)                        // paste an entry from clipboard history (0 = latest)
     case pause(milliseconds: Int)                  // wait before the next step
+
+    private enum K: String, CodingKey { case key, text, paste, pause }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: K.self)
+        switch self {
+        case let .key(code, modifiers): try c.encode(KeyChord.format(code: code, modifiers: modifiers), forKey: .key)
+        case let .text(text):           try c.encode(text, forKey: .text)
+        case let .paste(recent):        try c.encode(recent, forKey: .paste)
+        case let .pause(milliseconds):  try c.encode(milliseconds, forKey: .pause)
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: K.self)
+        if let chord = try? c.decode(String.self, forKey: .key), let parsed = KeyChord.parse(chord) {
+            self = .key(code: parsed.code, modifiers: parsed.modifiers)
+        } else if let text = try? c.decode(String.self, forKey: .text) {
+            self = .text(text)
+        } else if let recent = try? c.decode(Int.self, forKey: .paste) {
+            self = .paste(recent: recent)
+        } else if let ms = try? c.decode(Int.self, forKey: .pause) {
+            self = .pause(milliseconds: ms)
+        } else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                debugDescription: "Step needs one of: key, text, paste, pause"))
+        }
+    }
 }
 
 /// What a spoke does when fired: an ordered list of steps. Define once, fire by

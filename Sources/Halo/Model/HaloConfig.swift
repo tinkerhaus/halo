@@ -10,19 +10,59 @@ enum Key {
 }
 
 /// A halo bound to a set of apps. The frontmost app picks the profile; if none
-/// match, the `fallback` halo is used.
-struct Profile: Codable, Equatable, Identifiable {
+/// match, the config's `fallback` halo is used. Serializes as `{name, apps, halo}`
+/// (the `id` is runtime-only).
+struct Profile: Equatable, Identifiable {
     var id = UUID()
     var name: String
     var appBundleIDs: [String]
     var halo: Halo
 }
 
-/// Halo's whole configuration: a fallback halo plus per-app profiles. This is
-/// what persists to disk and what the editor edits.
-struct Configuration: Codable, Equatable {
+extension Profile: Codable {
+    private enum K: String, CodingKey { case name, apps, halo }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: K.self)
+        try c.encode(name, forKey: .name)
+        try c.encode(appBundleIDs, forKey: .apps)
+        try c.encode(halo, forKey: .halo)
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: K.self)
+        id = UUID()
+        name = (try? c.decodeIfPresent(String.self, forKey: .name)) ?? ""
+        appBundleIDs = (try? c.decodeIfPresent([String].self, forKey: .apps)) ?? []
+        halo = (try? c.decodeIfPresent(Halo.self, forKey: .halo)) ?? Halo()
+    }
+}
+
+/// The single source of truth for everything Halo does — summon button, the
+/// fallback wheel, and per-app profiles. This is the whole `halo.json`.
+///
+/// Decoding is lenient: omit any field and it falls back to a sensible default,
+/// so the JSON is comfortable to hand-edit.
+struct HaloConfig: Codable, Equatable {
+    var summonButton: Int
     var fallback: Halo
     var profiles: [Profile]
+
+    init(summonButton: Int = 4, fallback: Halo, profiles: [Profile]) {
+        self.summonButton = summonButton
+        self.fallback = fallback
+        self.profiles = profiles
+    }
+
+    enum CodingKeys: String, CodingKey { case summonButton, fallback, profiles }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let base = HaloConfig.starter()
+        summonButton = (try? c.decodeIfPresent(Int.self, forKey: .summonButton)) ?? base.summonButton
+        fallback = (try? c.decodeIfPresent(Halo.self, forKey: .fallback)) ?? base.fallback
+        profiles = (try? c.decodeIfPresent([Profile].self, forKey: .profiles)) ?? base.profiles
+    }
 
     /// The halo to summon for a given frontmost app.
     func halo(forApp bundleID: String?) -> Halo {
@@ -34,12 +74,12 @@ struct Configuration: Codable, Equatable {
 
     // MARK: - Starter configuration
 
-    static func starter() -> Configuration {
-        Configuration(fallback: fallbackHalo(),
-                      profiles: [terminalProfile(), browserProfile(), editorProfile()])
-    }
-
     private static func arc(_ span: Double) -> Arc { Arc(spanDegrees: span, centerDegrees: -90) }
+
+    static func starter() -> HaloConfig {
+        HaloConfig(summonButton: 4, fallback: fallbackHalo(),
+                   profiles: [terminalProfile(), browserProfile(), editorProfile()])
+    }
 
     private static func fallbackHalo() -> Halo {
         Halo(arc: arc(200), spokes: [
@@ -114,5 +154,17 @@ struct Configuration: Codable, Equatable {
                         .action("Right", "arrow.right", .key(Key.right)),
                     ])),
                 ]))
+    }
+}
+
+/// Human-readable name for an `NSEvent` mouse button number.
+func mouseButtonName(_ n: Int) -> String {
+    switch n {
+    case 0: return "Left click"
+    case 1: return "Right click"
+    case 2: return "Middle click"
+    case 3: return "Back (side button)"
+    case 4: return "Forward (side button)"
+    default: return "Button \(n + 1)"
     }
 }
