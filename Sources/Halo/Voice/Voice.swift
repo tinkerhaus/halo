@@ -39,6 +39,9 @@ final class Voice {
     private let model = "openai_whisper-large-v3-v20240930_turbo"
     private let repo = "haloapp/whisperkit-coreml"
 
+    /// Called on the main thread when a dictation session finishes (text injected).
+    var onFinish: (() -> Void)?
+
     private var whisper: WhisperKit?
     private var recorder: AVAudioRecorder?
     private var recordingURL: URL?
@@ -120,6 +123,7 @@ final class Voice {
             DispatchQueue.main.async {
                 if !text.isEmpty { Keyboard.type(text) }
                 self?.status = .ready
+                self?.onFinish?()
             }
         }
     }

@@ -9,6 +9,25 @@ enum Key {
     static let slash: UInt16 = 44, leftBracket: UInt16 = 33, rightBracket: UInt16 = 30
 }
 
+/// How dictation is triggered from the wheel's center.
+enum VoiceMode: String, Codable, Equatable {
+    case handsFree    // release at center → start a session; press summon again to stop
+    case pushToTalk   // hold at center to talk; release to send
+}
+
+/// Voice / dictation options.
+struct VoiceConfig: Codable, Equatable {
+    var mode: VoiceMode = .handsFree
+
+    init(mode: VoiceMode = .handsFree) { self.mode = mode }
+
+    enum CodingKeys: String, CodingKey { case mode }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        mode = (try? c.decodeIfPresent(VoiceMode.self, forKey: .mode)) ?? .handsFree
+    }
+}
+
 /// A halo bound to a set of apps. The frontmost app picks the profile; if none
 /// match, the config's `fallback` halo is used. Serializes as `{name, apps, halo}`
 /// (the `id` is runtime-only).
@@ -45,21 +64,24 @@ extension Profile: Codable {
 /// so the JSON is comfortable to hand-edit.
 struct HaloConfig: Codable, Equatable {
     var summonButton: Int
+    var voice: VoiceConfig
     var fallback: Halo
     var profiles: [Profile]
 
-    init(summonButton: Int = 4, fallback: Halo, profiles: [Profile]) {
+    init(summonButton: Int = 4, voice: VoiceConfig = VoiceConfig(), fallback: Halo, profiles: [Profile]) {
         self.summonButton = summonButton
+        self.voice = voice
         self.fallback = fallback
         self.profiles = profiles
     }
 
-    enum CodingKeys: String, CodingKey { case summonButton, fallback, profiles }
+    enum CodingKeys: String, CodingKey { case summonButton, voice, fallback, profiles }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let base = HaloConfig.starter()
         summonButton = (try? c.decodeIfPresent(Int.self, forKey: .summonButton)) ?? base.summonButton
+        voice = (try? c.decodeIfPresent(VoiceConfig.self, forKey: .voice)) ?? base.voice
         fallback = (try? c.decodeIfPresent(Halo.self, forKey: .fallback)) ?? base.fallback
         profiles = (try? c.decodeIfPresent([Profile].self, forKey: .profiles)) ?? base.profiles
     }
@@ -77,7 +99,7 @@ struct HaloConfig: Codable, Equatable {
     private static func arc(_ span: Int) -> Arc { Arc(spanDegrees: span, centerDegrees: -90) }
 
     static func starter() -> HaloConfig {
-        HaloConfig(summonButton: 4, fallback: fallbackHalo(),
+        HaloConfig(summonButton: 4, voice: VoiceConfig(mode: .handsFree), fallback: fallbackHalo(),
                    profiles: [terminalProfile(), browserProfile(), editorProfile()])
     }
 

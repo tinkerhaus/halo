@@ -84,7 +84,7 @@ struct WheelView: View {
                 Text("Hold to go back").font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.6))
             } else {
                 Image(systemName: "mic.fill").font(.system(size: 20, weight: .semibold))
-                Text("Hold to dictate").font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.6))
+                Text("Release to dictate").font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.6))
             }
         }
         .foregroundStyle(.white)

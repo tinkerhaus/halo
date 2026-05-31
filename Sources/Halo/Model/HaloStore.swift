@@ -56,6 +56,9 @@ final class HaloStore {
     # Edits apply on the next summon (the file is watched live).
     #
     # summonButton : mouse button that opens the wheel (NSEvent number; 2=middle, 3=back, 4=forward).
+    #                Left/right (0/1) are not allowed.
+    # voice.mode   : "handsFree" (release at center to start; press summon again to stop)
+    #                or "pushToTalk" (hold at center to talk; release to send).
     # fallback     : the wheel shown when no profile matches the frontmost app.
     # profiles     : list of { name, apps: [bundleID], halo } — used when the frontmost app is in `apps`.
     # halo         : { arc: { spanDegrees, centerDegrees }, radius, spokes: [...] }
