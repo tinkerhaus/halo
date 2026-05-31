@@ -18,6 +18,15 @@ struct HaloApp: App {
     }()
 
     var body: some Scene {
+        Window("Halo", id: "main") {
+            MainWindow()
+                .environment(controller.store)
+                .environment(controller.voice)
+                .environment(controller.permissions)
+                .frame(minWidth: 820, minHeight: 600)
+        }
+        .windowResizability(.contentMinSize)
+
         MenuBarExtra {
             MenuBarMenu()
                 .environment(controller.voice)

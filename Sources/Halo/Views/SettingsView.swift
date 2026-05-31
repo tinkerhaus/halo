@@ -48,7 +48,10 @@ struct SettingsView: View {
                         Text(mouseButtonName(store.summonButton))
                             .font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
                         Button("Change") {
-                            recorder.record { store.summonButton = $0 }
+                            recorder.record {
+                                store.summonButton = $0
+                                NotificationCenter.default.post(name: .haloSummonButtonRecorded, object: nil)
+                            }
                         }
                         .buttonStyle(.bordered)
                     }

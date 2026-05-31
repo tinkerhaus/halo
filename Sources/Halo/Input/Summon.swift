@@ -14,6 +14,12 @@ final class Summon {
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
     private var pressed = false          // de-dupes tap vs HID
+    private var suppressUntilRelease = false   // skip the click used to record a new summon button
+
+    /// After the user records a new summon button, the click they used is still
+    /// down — ignore its press *and* release so the wheel only fires from the
+    /// next, fresh press.
+    func rearmOnNextPress() { suppressUntilRelease = true }
 
     func start() {
         startTap()
@@ -24,8 +30,17 @@ final class Summon {
         }
     }
 
-    private func beginPress() { guard !pressed else { return }; pressed = true; onPress?() }
-    private func endPress()   { guard pressed else { return }; pressed = false; onRelease?() }
+    private func beginPress() {
+        guard !suppressUntilRelease else { return }   // still the recording click — wait for a fresh press
+        guard !pressed else { return }
+        pressed = true; onPress?()
+    }
+
+    private func endPress() {
+        if suppressUntilRelease { suppressUntilRelease = false; return }   // recording click released → now armed
+        guard pressed else { return }
+        pressed = false; onRelease?()
+    }
 
     // MARK: - Event tap (consumes the button when it reaches us as an event)
 

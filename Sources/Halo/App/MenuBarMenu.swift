@@ -5,6 +5,7 @@ import AppKit
 /// not by menus.
 struct MenuBarMenu: View {
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
     @Environment(Voice.self) private var voice
     @Environment(HaloStore.self) private var store
 
@@ -14,7 +15,7 @@ struct MenuBarMenu: View {
             Text("⚠︎ Config invalid — using defaults")
         }
         Divider()
-        Button("Halo Settings…") { openSettings() }
+        Button("Open Halo") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
         Button("Reset Config to Defaults…") { confirmReset() }
         Divider()
         Button("Quit Halo") { NSApp.terminate(nil) }

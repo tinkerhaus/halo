@@ -9,6 +9,7 @@ import AppKit
 final class AppController: NSObject, NSApplicationDelegate {
     let store = HaloStore()
     let voice = Voice()
+    let permissions = Permissions()
 
     private let wheel = WheelController()
     private let summon = Summon()
@@ -18,7 +19,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var sessionActive = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+        NSApp.setActivationPolicy(.regular)      // a proper Dock app; the wheel still runs in the background
 
         wheel.haloProvider = { [weak self] in
             guard let self else { return Halo() }
@@ -50,17 +51,23 @@ final class AppController: NSObject, NSApplicationDelegate {
         summon.onRelease = { [weak self] in self?.wheel.release() }
         summon.start()
 
+        // After the user records a new summon button, ignore the recording click itself.
+        NotificationCenter.default.addObserver(forName: .haloSummonButtonRecorded, object: nil, queue: .main) { [weak self] _ in
+            self?.summon.rearmOnNextPress()
+        }
+
         voice.prepare()                      // load the model (downloads on first run)
-        requestAccessibilityIfNeeded()
     }
+
+    /// Keep Halo running (wheel + menu bar) when the main window is closed; only
+    /// an explicit Quit (⌘Q) stops it.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     // MARK: - Dictation session
 
     private func startSession() {
         guard voice.isReady else { return }
         sessionActive = true
-        let v = store.config.voice
-        SystemAudio.quiet(mute: v.muteWhileRecording, pauseMedia: v.pauseMediaWhileRecording)
         voice.startRecording()
         wheel.beginVoiceSession()            // hub stays up as the live recording UI
     }
@@ -70,7 +77,6 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// preview the text before you commit.
     private func finishRecording() {
         voice.stopRecording()
-        SystemAudio.restore()
         wheel.markTranscribing()             // hub → "Transcribing…" until the preview lands
         voice.transcribe { [weak self] text in self?.wheel.showTranscript(text) }
     }
@@ -92,13 +98,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private func endSession() {
         sessionActive = false
-        SystemAudio.restore()                // idempotent — covers cancel before finishRecording
         wheel.endVoiceSession()
     }
 
-    /// Summon + keystroke injection need Accessibility. Prompt once.
-    private func requestAccessibilityIfNeeded() {
-        let options = ["AXTrustedCheckOptionPrompt" as CFString: true] as CFDictionary
-        _ = AXIsProcessTrustedWithOptions(options)
-    }
 }
