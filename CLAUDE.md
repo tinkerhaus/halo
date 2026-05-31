@@ -22,6 +22,8 @@ mv build/Halo.app /Applications/ && open /Applications/Halo.app
   rebuilds** (Accessibility / Input Monitoring bind to the code signature hash; an
   ad-hoc signature changes every build and silently drops grants).
 - After granting a permission, **fully quit and relaunch** — TCC caches per process.
+- `package.sh` also embeds + signs `Sparkle.framework` into the bundle (see
+  **Auto-updates** and the framework-embedding pitfall below).
 
 ## Permissions
 
@@ -47,7 +49,8 @@ Sources/Halo/
   Views/    SettingsView · Components
 ```
 
-Dependencies: **Yams** (YAML config), **WhisperKit** (on-device transcription).
+Dependencies: **Yams** (YAML config), **WhisperKit** (on-device transcription),
+**Sparkle** (auto-updates).
 
 ### Domain model (value types, all `Codable`)
 
@@ -98,6 +101,23 @@ launch from the Hugging Face repo `tinkerhaus/whisperkit-coreml`
 (variant `openai_whisper-large-v3-v20240930_turbo`), so the `.app` stays small. Load
 status (download %, ready, recording, transcribing) shows in the menu-bar menu.
 
+## Auto-updates (Sparkle)
+
+Updates ship via **Sparkle**, deliberately **without notarization**: Sparkle verifies
+every update with its own **Ed25519** key (`SUPublicEDKey` in Info.plist), independent
+of Apple Gatekeeper. The appcast feed is `docs/appcast.xml`, served from GitHub Pages
+at `SUFeedURL` (`https://tinkerhaus.github.io/halo/appcast.xml`). `AppController` owns
+an `Updater` (wrapping `SPUStandardUpdaterController`); **Check for Updates…** is in
+both the menu-bar menu and the app menu. First install still needs the one-time
+Gatekeeper bypass; Sparkle-applied updates generally don't re-prompt.
+
+Cutting a release: bump `VERSION`/`BUILD` in `package.sh`, build + make the dmg, upload
+it as a GitHub release asset, then add an `<item>` to `docs/appcast.xml` with the new
+`sparkle:version` (= `CFBundleVersion`), `sparkle:shortVersionString`, `length` (bytes),
+and `sparkle:edSignature` from `sign_update <dmg>` — sign the **exact published bytes**.
+The Sparkle private key lives in the login keychain (`generate_keys -p` prints the
+public key). Push to `main`; Pages republishes the feed.
+
 ## Conventions
 
 - Modern SwiftUI: `@Observable` stores injected via `.environment(...)`; value-type
@@ -144,3 +164,13 @@ status (download %, ready, recording, transcribing) shows in the menu-bar menu.
   clicking. The recorder and `Summon` both reject them; the config self-heals.
 - **Logs from ad-hoc/self-signed apps are filtered out of Console/`log show`.** If you
   need traces during dev, write to a file under `~/Library/Logs/Halo/` and `tail` it.
+- **Embedding a dynamic framework (Sparkle) in the self-signed app.** `package.sh`
+  hand-assembles the `.app`, so Sparkle — a *dynamic* XCFramework, unlike the static
+  Yams/WhisperKit source — must be copied into `Contents/Frameworks`, given an
+  `@executable_path/../Frameworks` rpath (SPM bakes none into the binary), and **signed
+  inside-out** (`XPCServices/*.xpc` → `Updater.app` → `Autoupdate` → framework → app).
+  The catch: a self-signed cert has **no Team ID**, so hardened-runtime *library
+  validation* refuses to load the framework (`dyld: … different Team IDs`). Fix: the
+  `com.apple.security.cs.disable-library-validation` entitlement on the app. Always
+  `open` the freshly built `.app` and confirm it stays alive **before** replacing
+  `/Applications/Halo.app` — a dyld miss is a silent, instant launch crash.
