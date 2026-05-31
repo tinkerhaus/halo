@@ -85,6 +85,12 @@ Sources/Halo/
 Dependencies: [Yams](https://github.com/jpsim/Yams) (YAML config) and
 [WhisperKit](https://github.com/argmaxinc/WhisperKit) (on-device transcription).
 
+## License
+
+Halo is **source-available** under the [PolyForm Noncommercial License 1.0.0](LICENSE.md) — free
+to use, modify, and share for **non-commercial** purposes (personal, learning, research).
+Commercial use is not permitted.
+
 ---
 
 Part of [**tinkerhaus**](https://github.com/tinkerhaus).
