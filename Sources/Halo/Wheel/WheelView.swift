@@ -6,6 +6,10 @@ import SwiftUI
 struct WheelView: View {
     let model: WheelModel
 
+    /// 0 → spokes collapsed at the hub, 1 → fully fanned out. Springs to 1 each
+    /// time a level appears (the bloom-in).
+    @State private var reveal: CGFloat = 1
+
     private let canvas: CGFloat = 380
     private let hub: CGFloat = 104
     private let spokeSize: CGFloat = 64
@@ -16,19 +20,45 @@ struct WheelView: View {
     )
 
     var body: some View {
-        let center = CGPoint(x: canvas / 2, y: canvas / 2)
         ZStack {
-            hubView.frame(width: hub, height: hub).position(center)
+            hubView
+                .frame(width: hub, height: hub)
+                .scaleEffect(0.82 + 0.18 * reveal)
+                .opacity(Double(min(1, reveal * 1.6)))
+                .position(centerPoint)
 
             ForEach(model.spokes) { spoke in
-                let theta = spoke.id < model.angles.count ? model.angles[spoke.id].radians : -.pi / 2
-                let pos = CGPoint(x: center.x + model.radius * cos(theta),
-                                  y: center.y + model.radius * sin(theta))
-                spokeView(spoke).position(pos)
+                spokeView(spoke)
+                    .scaleEffect(reveal)
+                    .opacity(Double(reveal))
+                    .position(position(for: spoke))
             }
         }
         .frame(width: canvas, height: canvas)
         .animation(.spring(response: 0.22, dampingFraction: 0.7), value: model.highlighted)
+        .onChange(of: model.revealID) { _, _ in bloom() }
+        .onChange(of: model.collapseID) { _, _ in collapse() }
+    }
+
+    private var centerPoint: CGPoint { CGPoint(x: canvas / 2, y: canvas / 2) }
+
+    /// Spoke position, slid out from the hub by `reveal` (0 → at hub, 1 → fanned).
+    private func position(for spoke: WheelSpoke) -> CGPoint {
+        let theta: Double = spoke.id < model.angles.count ? model.angles[spoke.id].radians : -.pi / 2
+        let r = Double(model.radius) * Double(reveal)
+        return CGPoint(x: Double(canvas) / 2 + r * cos(theta),
+                       y: Double(canvas) / 2 + r * sin(theta))
+    }
+
+    /// Spokes spring out from the hub when a level appears.
+    private func bloom() {
+        reveal = 0
+        withAnimation(.spring(response: 0.42, dampingFraction: 0.72)) { reveal = 1 }
+    }
+
+    /// Spokes retract into the hub as the wheel dismisses.
+    private func collapse() {
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) { reveal = 0 }
     }
 
     private var hubView: some View {

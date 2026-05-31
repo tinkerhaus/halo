@@ -22,4 +22,8 @@ final class WheelModel {
     var inWedge = false
     /// Depth in the well stack (0 == root). Drives the center hint.
     var depth = 0
+    /// Bumped whenever a new level is shown, so the view replays the bloom-in.
+    var revealID = 0
+    /// Bumped when the wheel is dismissed, so the view plays the collapse-out.
+    var collapseID = 0
 }

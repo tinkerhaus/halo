@@ -30,12 +30,15 @@ final class WheelController {
     private var dwellFrames = 0
     private let dwellNeeded = 18    // ~0.3s at 60 Hz
 
+    private var hideToken = 0       // cancels a pending collapse-hide on re-summon
+
     var isShowing: Bool { panel?.isVisible ?? false }
 
     // MARK: - Lifecycle
 
     func present() {
         ensurePanel()
+        hideToken += 1                 // cancel any in-flight collapse-hide
         stack = [haloProvider()]
         dwell = .none; dwellFrames = 0
         render()
@@ -59,11 +62,18 @@ final class WheelController {
     }
 
     func dismiss() {
-        tracker?.invalidate(); tracker = nil
-        panel?.orderOut(nil)
-        stack = []
+        tracker?.invalidate(); tracker = nil      // freeze selection during the collapse
         dwell = .none; dwellFrames = 0
-        model.highlighted = nil; model.inWedge = false
+        model.collapseID += 1                      // retract spokes into the hub
+
+        hideToken += 1
+        let token = hideToken
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.26) { [weak self] in
+            guard let self, self.hideToken == token else { return }
+            self.panel?.orderOut(nil)
+            self.stack = []
+            self.model.highlighted = nil; self.model.inWedge = false
+        }
     }
 
     // MARK: - Levels
@@ -77,6 +87,7 @@ final class WheelController {
         model.depth = stack.count - 1
         model.highlighted = nil
         model.inWedge = false
+        model.revealID += 1     // replay the bloom-in for this level
     }
 
     private func expand(_ index: Int) {
