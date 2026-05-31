@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Halo</title>
+    <link>https://tinkerhaus.github.io/halo/appcast.xml</link>
+    <description>Updates for Halo — the mouse-summoned radial command wheel.</description>
+    <language>en</language>
+    <item>
+      <title>Halo 0.1.0</title>
+      <pubDate>Mon, 01 Jun 2026 01:18:06 +0000</pubDate>
+      <sparkle:version>1</sparkle:version>
+      <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <p>First public release: a mouse-summoned radial command wheel with on-device voice dictation at its center.</p>
+      ]]></description>
+      <enclosure url="https://github.com/tinkerhaus/halo/releases/download/v0.1.0/Halo-0.1.0.dmg"
+                 sparkle:edSignature="WPLt7XiRQwat4vQQ7OTSGF7keiZMOulpVvFPlT+g6hn5XBABVi7k3ObYNB6UQvitrYKfpOVVQAYf7fDlk+tDCQ=="
+                 length="5083653"
+                 type="application/octet-stream" />
+    </item>
+  </channel>
+</rss>

@@ -10,6 +10,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     let store = HaloStore()
     let voice = Voice()
     let permissions = Permissions()
+    let updater = Updater()
 
     private let wheel = WheelController()
     private let summon = Summon()

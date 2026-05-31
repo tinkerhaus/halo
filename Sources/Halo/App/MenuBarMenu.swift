@@ -8,6 +8,7 @@ struct MenuBarMenu: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(Voice.self) private var voice
     @Environment(HaloStore.self) private var store
+    @Environment(Updater.self) private var updater
 
     var body: some View {
         Text("Voice: \(voice.statusText)")
@@ -18,6 +19,9 @@ struct MenuBarMenu: View {
         Button("Open Halo") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
         Button("Reveal Config in Finder") { NSWorkspace.shared.activateFileViewerSelecting([store.configURL]) }
         Button("Reset Config to Defaults…") { confirmReset() }
+        Divider()
+        Button("Check for Updates…") { updater.checkForUpdates() }
+            .disabled(!updater.canCheck)
         Divider()
         Button("Quit Halo") { NSApp.terminate(nil) }
             .keyboardShortcut("q")

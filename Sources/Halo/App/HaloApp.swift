@@ -26,11 +26,18 @@ struct HaloApp: App {
                 .frame(minWidth: 900, minHeight: 640)
         }
         .windowResizability(.contentMinSize)
+        .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { controller.updater.checkForUpdates() }
+                    .disabled(!controller.updater.canCheck)
+            }
+        }
 
         MenuBarExtra {
             MenuBarMenu()
                 .environment(controller.voice)
                 .environment(controller.store)
+                .environment(controller.updater)
         } label: {
             Image(nsImage: Self.menuBarIcon)
         }
