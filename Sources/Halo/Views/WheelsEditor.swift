@@ -277,13 +277,17 @@ struct WheelsEditor: View {
     // MARK: - Canvas
 
     private var canvasArea: some View {
-        ZStack {
+        let preview = wellPreview
+        return ZStack {
             Rectangle().fill(.clear).contentShape(Rectangle())
                 .onTapGesture { selection = .empty }
-            WheelCanvas(halo: currentHalo, selection: selection, centerHint: centerHint,
-                        onSelect: { selection = $0 },
-                        onDrill: { drillInto($0) },
-                        onReorder: { from, to in reorderSpoke(from, to) },
+            WheelCanvas(halo: preview?.halo ?? currentHalo,
+                        selection: canvasSelection(preview),
+                        backIndex: preview?.backIndex,
+                        centerHint: centerHint,
+                        onSelect: { handleCanvasSelect($0, preview) },
+                        onDrill: { handleCanvasDrill($0, preview) },
+                        onReorder: { from, to in handleCanvasReorder(from, to, preview) },
                         onSetSpan: { setSpan($0) },
                         onSetCenter: { setCenter($0) })
             VStack {
@@ -292,6 +296,41 @@ struct WheelsEditor: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Well preview (the canvas mirrors the runtime sub-ring: children + Back)
+
+    /// When drilled into a well, the ring the canvas shows: the child spokes plus the
+    /// auto Back spoke laid out on the parent's arc — exactly what the wheel renders.
+    private var wellPreview: (halo: Halo, backIndex: Int)? {
+        guard let wellIndex = wellPath.last else { return nil }
+        let parent = resolveHalo(in: store.draft, path: Array(wellPath.dropLast()))
+        guard parent.spokes.indices.contains(wellIndex) else { return nil }
+        return Halo.subRing(opening: currentHalo, on: parent, wellIndex: wellIndex)
+    }
+
+    private func childIndex(forDisplayed d: Int, backIndex b: Int) -> Int? { d == b ? nil : (d < b ? d : d - 1) }
+    private func displayedIndex(forChild c: Int, backIndex b: Int) -> Int { c < b ? c : c + 1 }
+
+    /// Translate the (child-indexed) selection into the preview's displayed indices.
+    private func canvasSelection(_ preview: (halo: Halo, backIndex: Int)?) -> CanvasSelection {
+        guard let p = preview, case .spoke(let c) = selection else { return selection }
+        return .spoke(displayedIndex(forChild: c, backIndex: p.backIndex))
+    }
+    private func handleCanvasSelect(_ sel: CanvasSelection, _ preview: (halo: Halo, backIndex: Int)?) {
+        guard let p = preview, case .spoke(let d) = sel else { selection = sel; return }
+        if let c = childIndex(forDisplayed: d, backIndex: p.backIndex) { selection = .spoke(c) }
+        // tapping Back does nothing — it's automatic
+    }
+    private func handleCanvasReorder(_ from: Int, _ to: Int, _ preview: (halo: Halo, backIndex: Int)?) {
+        guard let p = preview else { reorderSpoke(from, to); return }
+        guard let cf = childIndex(forDisplayed: from, backIndex: p.backIndex) else { return }
+        let raw = to < p.backIndex ? to : to - 1
+        reorderSpoke(cf, min(max(0, raw), max(0, currentHalo.spokes.count - 1)))
+    }
+    private func handleCanvasDrill(_ d: Int, _ preview: (halo: Halo, backIndex: Int)?) {
+        guard let p = preview else { drillInto(d); return }
+        if let c = childIndex(forDisplayed: d, backIndex: p.backIndex) { drillInto(c) }
     }
 
     /// The add-spoke affordance — deliberately *off* the ring, below the wheel. At
@@ -929,15 +968,16 @@ struct WheelsEditor: View {
         }
     }
 
-    /// The halo currently on the canvas — base walked down the well path.
-    private func resolveHalo(in cfg: HaloConfig) -> Halo {
+    /// The halo at `path` from the base — used for the current ring and its parent.
+    private func resolveHalo(in cfg: HaloConfig, path: [Int]) -> Halo {
         var halo = baseHalo(in: cfg)
-        for idx in wellPath {
+        for idx in path {
             guard halo.spokes.indices.contains(idx), case .opens(let child) = halo.spokes[idx].content else { break }
             halo = child
         }
         return halo
     }
+    private func resolveHalo(in cfg: HaloConfig) -> Halo { resolveHalo(in: cfg, path: wellPath) }
 
     private var currentHalo: Halo { resolveHalo(in: store.draft) }
 
@@ -1024,6 +1064,7 @@ enum HaloPalette {
 struct WheelCanvas: View {
     let halo: Halo
     var selection: CanvasSelection = .empty
+    var backIndex: Int? = nil               // the auto Back spoke (sub-ring preview) — inert, no arc handles
     var centerHint: (icon: String, label: String) = ("mic.fill", "Release to dictate")
     var onSelect: (CanvasSelection) -> Void = { _ in }
     var onDrill: (Int) -> Void = { _ in }
@@ -1038,21 +1079,31 @@ struct WheelCanvas: View {
             let layout = WheelLayout(halo: halo, size: geo.size)
             ZStack {
                 ForEach(Array(halo.spokes.enumerated()), id: \.element.id) { i, spoke in
-                    spokeChip(spoke, hot: selection == .spoke(i), scale: layout.scale)
-                        .position(layout.position(i))
-                        .onTapGesture(count: 2) { if spoke.isWell { onDrill(i) } }
-                        .onTapGesture { onSelect(.spoke(i)) }
-                        .gesture(spokeDrag(spoke.id, layout))
+                    canvasChip(i, spoke, layout)
                 }
                 hub(scale: layout.scale)
                     .position(layout.center)
                     .onTapGesture { onSelect(.center) }
-                if selection == .empty, !halo.spokes.isEmpty { arcHandles(layout) }
+                if selection == .empty, !halo.spokes.isEmpty, backIndex == nil { arcHandles(layout) }
             }
             .frame(width: geo.size.width, height: geo.size.height)
             .coordinateSpace(name: space)
             .animation(.spring(response: 0.28, dampingFraction: 0.74), value: selection)
             .animation(.spring(response: 0.25, dampingFraction: 0.8), value: halo)
+        }
+    }
+
+    @ViewBuilder private func canvasChip(_ i: Int, _ spoke: Spoke, _ layout: WheelLayout) -> some View {
+        if i == backIndex {     // the automatic Back spoke: shown, but not selectable / draggable
+            spokeChip(spoke, hot: false, scale: layout.scale)
+                .opacity(0.9)
+                .position(layout.position(i))
+        } else {
+            spokeChip(spoke, hot: selection == .spoke(i), scale: layout.scale)
+                .position(layout.position(i))
+                .onTapGesture(count: 2) { if spoke.isWell { onDrill(i) } }
+                .onTapGesture { onSelect(.spoke(i)) }
+                .gesture(spokeDrag(spoke.id, layout))
         }
     }
 

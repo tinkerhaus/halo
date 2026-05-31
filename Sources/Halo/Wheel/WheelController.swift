@@ -196,27 +196,10 @@ final class WheelController {
     private func expand(_ index: Int) {
         guard current.spokes.indices.contains(index),
               case .opens(let child) = current.spokes[index].content else { return }
-        let built = subRing(child: child, parent: current, wellIndex: index)
+        let built = Halo.subRing(opening: child, on: current, wellIndex: index)
         backArmed = false                       // require leaving Back once before it can fire
         stack.append(Level(halo: built.halo, backIndex: built.backIndex))
         render()
-    }
-
-    /// The ring shown when a well opens: the child's spokes plus a Back spoke, laid
-    /// out on the *parent's* arc so Back sits where the well spoke was — enter and
-    /// exit are the same place.
-    private func subRing(child: Halo, parent: Halo, wellIndex: Int) -> (halo: Halo, backIndex: Int) {
-        let parentAngles = parent.arc.placements(count: parent.spokes.count)
-        let wellAngle = parentAngles.indices.contains(wellIndex) ? parentAngles[wellIndex] : parent.arc.center
-        var spokes = Array(child.spokes.prefix(Halo.maxSpokes - 1))   // leave a slot for Back
-        let back = Spoke(label: "Back", glyph: "chevron.backward", content: .performs(Action([])))
-        let angles = parent.arc.placements(count: spokes.count + 1)
-        var backIndex = 0, best = Double.greatestFiniteMagnitude
-        for (i, a) in angles.enumerated() where abs(Arc.delta(a, wellAngle)) < best {
-            best = abs(Arc.delta(a, wellAngle)); backIndex = i
-        }
-        spokes.insert(back, at: backIndex)
-        return (Halo(arc: parent.arc, radius: parent.radius, spokes: spokes), backIndex)
     }
 
     private func pop() {
