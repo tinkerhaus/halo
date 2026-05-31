@@ -85,6 +85,11 @@ extension Spoke: Codable {
 /// context (root wheel → dictate; a sub-ring → back out), resolved by the
 /// wheel controller — so existing configs are unchanged.
 struct Halo: Codable, Equatable {
+    /// A halo never fans more than this many spokes — past ~7 the flick targets
+    /// get too cramped to hit reliably; use a `well` to nest more. The editor
+    /// enforces this; a hand-edited config with more still loads (it just can't grow).
+    static let maxSpokes = 7
+
     var arc = Arc()
     var radius: Int = 124            // points from the hub to each spoke
     var spokes: [Spoke] = []

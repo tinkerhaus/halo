@@ -12,9 +12,10 @@ Things deferred to come back to.
       sounds (carried the design from Utter; not yet ported to Halo).
 
 ## Features
-- [ ] **Wheel editor UI** — edit profiles & spokes in Settings (assign / reorder /
-      add / record-key / make a well) with a live preview, instead of hand-editing
-      `config.yaml`.
+- [x] **Wheel editor UI** — built as the **Wheels** pane (`Views/WheelsEditor.swift`): a
+      canvas-primary editor (rail · radial canvas · inspector) to assign / reorder / record /
+      nest spokes, edit profiles & finish rings, all live on `store.config`. See
+      `design/wheels-editor.md`. Pending a real run-through + the polish noted there.
 - [ ] **Voice: cancel a session** — discard a recording without sending (e.g. Esc).
 - [ ] **Voice: VAD auto-stop** — optional `voice.mode` that stops on silence.
 - [ ] **Per-profile app list in UI** — currently seed-only / hand-edited in YAML.

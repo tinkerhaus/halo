@@ -14,10 +14,28 @@ struct WheelView: View {
     private let hub: CGFloat = 104
     private let spokeSize: CGFloat = 64
 
-    private let accent = LinearGradient(
-        colors: [Color(red: 0.55, green: 0.50, blue: 0.98), Color(red: 0.40, green: 0.72, blue: 0.98)],
-        startPoint: .topLeading, endPoint: .bottomTrailing
-    )
+    private let accentColor = Color(red: 0.55, green: 0.50, blue: 0.98)
+
+    /// A frosted-glass disc that samples the app behind the wheel (behind-window
+    /// vibrancy) plus a darkening veil, an optional accent tint for selection, and a
+    /// top specular rim. Glyphs/labels sit on top of this.
+    @ViewBuilder
+    private func frostDisc(tint: Color?, darken: Double, shadowRadius: CGFloat, isWell: Bool = false) -> some View {
+        ZStack {
+            FrostCircle(material: .hudWindow)
+            Circle().fill(.black.opacity(darken))
+            if let tint { Circle().fill(tint.opacity(0.5)) }
+        }
+        .clipShape(Circle())
+        .overlay(
+            Circle().strokeBorder(
+                LinearGradient(colors: [.white.opacity(0.4), .white.opacity(0.06), .clear],
+                               startPoint: .top, endPoint: .bottom),
+                lineWidth: 1)
+        )
+        .overlay { if isWell { Circle().strokeBorder(.white.opacity(0.22), lineWidth: 1).padding(-3) } }
+        .shadow(color: .black.opacity(0.5), radius: shadowRadius, y: 4)
+    }
 
     var body: some View {
         ZStack {
@@ -92,11 +110,7 @@ struct WheelView: View {
         }
         .foregroundStyle(.white)
         .frame(width: hub, height: hub)
-        .background(Circle().fill(Color(red: 0.10, green: 0.11, blue: 0.15).opacity(0.97)))
-        .overlay(Circle().strokeBorder(model.inWedge ? AnyShapeStyle(.white.opacity(0.25))
-                                                      : AnyShapeStyle(accent.opacity(h == nil ? 0.55 : 0.95)),
-                                       lineWidth: 1.5))
-        .shadow(color: .black.opacity(0.5), radius: 14, y: 5)
+        .background(frostDisc(tint: model.inWedge ? .white : nil, darken: 0.34, shadowRadius: 14))
     }
 
     private func spokeView(_ spoke: WheelSpoke) -> some View {
@@ -107,10 +121,8 @@ struct WheelView: View {
         }
         .foregroundStyle(.white)
         .frame(width: spokeSize, height: spokeSize)
-        .background(Circle().fill(isHot ? AnyShapeStyle(accent)
-                                        : AnyShapeStyle(Color(red: 0.14, green: 0.15, blue: 0.19).opacity(0.97))))
-        .overlay(Circle().strokeBorder(.white.opacity(spoke.isWell ? 0.30 : 0.0), lineWidth: 1).padding(-3.5))
-        .shadow(color: .black.opacity(0.45), radius: isHot ? 14 : 7, y: 3)
+        .background(frostDisc(tint: isHot ? accentColor : nil, darken: 0.20,
+                              shadowRadius: isHot ? 14 : 7, isWell: spoke.isWell))
         .scaleEffect(isHot ? 1.42 : 1)
         .zIndex(isHot ? 1 : 0)
     }
@@ -167,10 +179,14 @@ struct TranscriptCaption: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 11)
             .frame(maxWidth: 320)
-            .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(red: 0.10, green: 0.11, blue: 0.15).opacity(0.97)))
+            .background(
+                ZStack {
+                    FrostRoundedRect(material: .hudWindow, cornerRadius: 14)
+                    RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.black.opacity(0.32))
+                }
+            )
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(.white.opacity(0.12), lineWidth: 1))
+                .strokeBorder(.white.opacity(0.18), lineWidth: 1))
             .shadow(color: .black.opacity(0.45), radius: 16, y: 6)
             .padding(.bottom, 8)
     }

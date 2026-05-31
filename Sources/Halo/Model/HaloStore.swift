@@ -3,12 +3,18 @@ import Observation
 import Yams
 
 /// The single source of truth for Halo, backed by `halo.json`. Everything —
-/// summon button, fallback wheel, per-app profiles — lives in this one file.
+/// summon button, default wheel, per-app profiles — lives in this one file.
 /// It's watched on disk, so hand/AI edits apply live with no restart.
 @Observable
 final class HaloStore {
     private let fileURL: URL
     var config: HaloConfig { didSet { save() } }
+
+    /// The Wheels editor's working copy. Edits mutate this with **no** disk write;
+    /// `commitDraft()` is the explicit Save. Held on the store (not the editor view)
+    /// so unsaved edits survive the window closing or the pane being switched away.
+    var draft: HaloConfig
+    var hasUnsavedChanges: Bool { draft != config }
 
     var configURL: URL { fileURL }
 
@@ -17,6 +23,7 @@ final class HaloStore {
     private(set) var configError: String?
 
     private var watcher: DispatchSourceFileSystemObject?
+    private var saveWork: DispatchWorkItem?
 
     init() {
         let base = FileManager.default
@@ -39,6 +46,7 @@ final class HaloStore {
 
         self.fileURL = url
         self.config = loaded
+        self.draft = loaded
         self.configError = error
         if !FileManager.default.fileExists(atPath: url.path) { write(loaded) }   // seed the file
         startWatching()
@@ -55,7 +63,14 @@ final class HaloStore {
     func resetToStarter() {
         configError = nil
         config = .starter()      // didSet → save() rewrites config.yaml with clean defaults
+        draft = config
     }
+
+    /// Commit the editor's working copy to disk (the explicit Save).
+    func commitDraft() { config = draft }   // didSet → save()
+
+    /// Throw away unsaved editor changes, reverting to what's on disk.
+    func discardDraft() { draft = config }
 
     /// Re-read from disk if it changed underneath us. No-ops when identical, so
     /// our own saves don't cause a loop. Surfaces a parse error rather than
@@ -64,7 +79,11 @@ final class HaloStore {
         do {
             guard let fresh = try HaloStore.parse(from: fileURL) else { return }
             configError = nil
-            if fresh != config { config = fresh }
+            if fresh != config {
+                let draftWasClean = (draft == config)
+                config = fresh
+                if draftWasClean { draft = fresh }   // keep an unedited draft in sync with the file
+            }
         } catch {
             configError = HaloStore.message(for: error)
         }
@@ -96,9 +115,10 @@ final class HaloStore {
     #
     # summonButton : mouse button that opens the wheel (NSEvent number; 2=middle, 3=back, 4=forward).
     #                Left/right (0/1) are not allowed.
+    # sounds       : soft UI cues on summon / select / fire / send (true or false).
     # voice.finish : the default finish ring (a halo) shown when you stop a dictation.
     #                A profile may set its own `finish`; omit both for a built-in plain-Send ring.
-    # fallback     : the wheel shown when no profile matches the frontmost app.
+    # default      : the wheel shown when no profile matches the frontmost app.
     # profiles     : list of { name, apps: [bundleID], halo, finish? }. The frontmost app picks
     #                the profile; most specific (fewest apps) wins, so a 1-app profile overrides a group.
     # halo         : { arc: { spanDegrees, centerDegrees }, radius, spokes: [...], center? }
@@ -111,9 +131,12 @@ final class HaloStore {
     #                        mods: cmd|ctrl|opt|shift   keys: a-z 0-9, return/enter, esc, tab, space,
     #                        delete, up/down/left/right, home/end, and [ ] / \\\\ ; ' , . - = `
     #                text  : type literal text
-    #                steps : ordered list of { key | text | paste | pause | do } — runs in sequence.
+    #                steps : ordered list of { key | text | paste | pause | do | bash } — runs in sequence.
     #                        paste: N (clipboard history)   pause: ms
     #                        do: send | dictate | cancel | undo  (dictation verbs — see below)
+    #                        bash: "shell command" — runs via your login shell; $HALO_TRANSCRIPT holds the
+    #                              dictation. `inject: true` types its stdout back. `as: name` saves the
+    #                              stdout so a later step can read it as $name (steps run in order).
     #                well  : a nested halo (a sub-ring you dwell into): { arc, radius, spokes }
     #                glyph : an SF Symbol name, e.g. "arrow.up", "stop.circle"
     # do (verbs)   : dictate — start a voice session (the hub becomes the live waveform)
@@ -123,9 +146,18 @@ final class HaloStore {
 
     """
 
+    /// Coalesce rapid edits (slider drags, typing in the editor) into one write
+    /// ~0.3s after they settle, so a config change per keystroke doesn't thrash the
+    /// file. The watcher's reload no-ops on our own writes (content is identical).
     private func save() {
-        let snapshot = config
-        DispatchQueue.global(qos: .utility).async { [weak self] in self?.write(snapshot) }
+        saveWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            let snapshot = self.config
+            DispatchQueue.global(qos: .utility).async { [weak self] in self?.write(snapshot) }
+        }
+        saveWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
     }
 
     private func write(_ config: HaloConfig) {

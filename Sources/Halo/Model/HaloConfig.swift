@@ -25,7 +25,7 @@ struct VoiceConfig: Codable, Equatable {
 }
 
 /// A halo bound to a set of apps. The frontmost app picks the profile; if none
-/// match, the config's `fallback` halo is used. Serializes as `{name, apps, halo}`
+/// match, the config's `default` halo is used. Serializes as `{name, apps, halo}`
 /// (the `id` is runtime-only).
 struct Profile: Equatable, Identifiable {
     var id = UUID()
@@ -69,31 +69,42 @@ extension Profile: Codable {
 }
 
 /// The single source of truth for everything Halo does — summon button, the
-/// fallback wheel, and per-app profiles. This is the whole `halo.json`.
+/// default wheel, and per-app profiles. This is the whole `halo.json`.
 ///
 /// Decoding is lenient: omit any field and it falls back to a sensible default,
 /// so the JSON is comfortable to hand-edit.
 struct HaloConfig: Codable, Equatable {
     var summonButton: Int
+    var sounds: Bool               // soft UI cues on summon / select / fire / send
     var voice: VoiceConfig
-    var fallback: Halo
+    var defaultHalo: Halo          // wheel shown when no profile matches (YAML key: `default`)
     var profiles: [Profile]
 
-    init(summonButton: Int = 4, voice: VoiceConfig = VoiceConfig(), fallback: Halo, profiles: [Profile]) {
+    init(summonButton: Int = 4, sounds: Bool = true, voice: VoiceConfig = VoiceConfig(),
+         defaultHalo: Halo, profiles: [Profile]) {
         self.summonButton = summonButton
+        self.sounds = sounds
         self.voice = voice
-        self.fallback = fallback
+        self.defaultHalo = defaultHalo
         self.profiles = profiles
     }
 
-    enum CodingKeys: String, CodingKey { case summonButton, voice, fallback, profiles }
+    // `default` is the user-facing key; `fallback` is still read as a deprecated
+    // alias so existing configs load (they self-heal to `default` on the next save).
+    enum CodingKeys: String, CodingKey { case summonButton, sounds, voice, profiles, defaultHalo = "default" }
+    private enum LegacyKeys: String, CodingKey { case fallback }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let base = HaloConfig.starter()
         summonButton = (try? c.decodeIfPresent(Int.self, forKey: .summonButton)) ?? base.summonButton
+        sounds = (try? c.decodeIfPresent(Bool.self, forKey: .sounds)) ?? base.sounds
         voice = (try? c.decodeIfPresent(VoiceConfig.self, forKey: .voice)) ?? base.voice
-        fallback = (try? c.decodeIfPresent(Halo.self, forKey: .fallback)) ?? base.fallback
+        var resolved = (try? c.decodeIfPresent(Halo.self, forKey: .defaultHalo)) ?? nil
+        if resolved == nil, let legacy = try? decoder.container(keyedBy: LegacyKeys.self) {
+            resolved = (try? legacy.decodeIfPresent(Halo.self, forKey: .fallback)) ?? nil
+        }
+        defaultHalo = resolved ?? base.defaultHalo
         profiles = (try? c.decodeIfPresent([Profile].self, forKey: .profiles)) ?? base.profiles
     }
 
@@ -108,7 +119,7 @@ struct HaloConfig: Codable, Equatable {
 
     /// The halo to summon for a given frontmost app.
     func halo(forApp bundleID: String?) -> Halo {
-        profile(forApp: bundleID)?.halo ?? fallback
+        profile(forApp: bundleID)?.halo ?? defaultHalo
     }
 
     /// The finish ring for a given frontmost app: the matched profile's, else the
@@ -146,11 +157,11 @@ struct HaloConfig: Codable, Equatable {
     }
 
     static func starter() -> HaloConfig {
-        HaloConfig(summonButton: 4, voice: VoiceConfig(finish: defaultFinish()), fallback: fallbackHalo(),
+        HaloConfig(summonButton: 4, voice: VoiceConfig(finish: defaultFinish()), defaultHalo: makeDefaultHalo(),
                    profiles: [terminalProfile(), browserProfile(), editorProfile()])
     }
 
-    private static func fallbackHalo() -> Halo {
+    private static func makeDefaultHalo() -> Halo {
         Halo(arc: arc(200), spokes: [
             .action("Enter", "return", .key(Key.enter)),
             .action("Up", "arrow.up", .key(Key.up)),

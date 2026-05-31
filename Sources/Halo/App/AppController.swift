@@ -41,6 +41,18 @@ final class AppController: NSObject, NSApplicationDelegate {
         ActionRunner.onCancel = { [weak self] in self?.cancelSession() }
         ActionRunner.onUndo = { [weak self] in self?.voice.undoLast() }
         ActionRunner.onActed = { [weak self] in self?.voice.clearUndo() }
+        ActionRunner.transcript = { [weak self] completion in
+            guard let self, self.sessionActive else { return completion("") }
+            self.voice.whenTranscriptReady(completion)        // the dictation for $HALO_TRANSCRIPT
+        }
+        ActionRunner.hasSession = { [weak self] in self?.sessionActive ?? false }
+        ActionRunner.endSession = { [weak self] in self?.endSession() }
+        ActionRunner.onBash = { [weak self] command, inject, capture, vars, done in
+            guard let self else { return done(nil) }
+            self.runBash(command, inject: inject, capture: capture, vars: vars, done: done)
+        }
+
+        Sounds.shared.isEnabled = { [weak self] in self?.store.config.sounds ?? true }
 
         summon.button = { [weak self] in self?.store.summonButton ?? 4 }
         summon.onPress = { [weak self] in
@@ -86,6 +98,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private func send(_ done: @escaping () -> Void) {
         voice.whenTranscriptReady { [weak self] text in
             self?.voice.inject(text)
+            Sounds.shared.play(.send)
             self?.endSession()
             done()
         }
@@ -93,7 +106,51 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private func cancelSession() {
         voice.cancel()
+        Sounds.shared.play(.cancel)
         endSession()
+    }
+
+    /// Run a `bash` step. Step vars are passed as environment variables — the
+    /// dictation as `$HALO_TRANSCRIPT`, any saved outputs as `$name` (never
+    /// interpolated, so quotes/newlines are safe) — through a **login shell** so the
+    /// user's PATH and tools resolve. `inject` types stdout back; `capture` means a
+    /// later step needs the stdout, so we wait and return it.
+    private func runBash(_ command: String, inject: Bool, capture: Bool, vars: [String: String],
+                         done: @escaping (String?) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+            process.arguments = ["-lc", command]
+            var env = ProcessInfo.processInfo.environment
+            for (key, value) in vars { env[key == "TRANSCRIPT" ? "HALO_TRANSCRIPT" : key] = value }
+            process.environment = env
+
+            let wantsOutput = inject || capture
+            let pipe = Pipe()
+            if wantsOutput { process.standardOutput = pipe }
+            do { try process.run() } catch { DispatchQueue.main.async { done(nil) }; return }
+            guard wantsOutput else { DispatchQueue.main.async { done(nil) }; return }
+
+            if !capture {
+                // inject-only: keep the chain moving; type the output whenever it lands.
+                DispatchQueue.main.async { done(nil) }
+                let out = AppController.readToEnd(pipe, process)
+                if inject, !out.isEmpty { DispatchQueue.main.async { self?.voice.inject(out) } }
+                return
+            }
+            // capture: a later step needs this value, so wait for it.
+            let out = AppController.readToEnd(pipe, process)
+            DispatchQueue.main.async {
+                if inject, !out.isEmpty { self?.voice.inject(out) }
+                done(out)
+            }
+        }
+    }
+
+    private static func readToEnd(_ pipe: Pipe, _ process: Process) -> String {
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
     private func endSession() {

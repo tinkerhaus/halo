@@ -13,15 +13,15 @@ struct AmbientBackground: View {
     }
 }
 
-/// A soft translucent panel — Halo's standard grouping container.
+/// Halo's standard grouping container — real Liquid Glass on macOS 26 (lensing the
+/// window's own content behind it), a soft translucent panel on older systems.
 struct Card<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
         content
             .padding(18)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(.white.opacity(0.04)))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.white.opacity(0.07), lineWidth: 0.5))
+            .glassPanel(cornerRadius: 12, fallback: AnyShapeStyle(.white.opacity(0.04)))
     }
 }
 

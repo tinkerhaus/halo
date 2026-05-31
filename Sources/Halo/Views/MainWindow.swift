@@ -40,8 +40,7 @@ struct MainWindow: View {
                            onRelaunch: Self.relaunch,
                            onDone: { section = .wheels })
         case .wheels:
-            comingSoon("Wheel editor", icon: "circle.dotted.circle",
-                       detail: "Assign, reorder, record, and nest spokes with a live preview — without hand-editing YAML. This is the next milestone. For now, edit the config from General.")
+            WheelsEditor()
         case .voice:
             voicePane
         case .general:
@@ -53,6 +52,13 @@ struct MainWindow: View {
 
     // MARK: Panes
 
+    /// Writes both config and the editor draft so an in-progress wheel edit's Save
+    /// doesn't revert this setting.
+    private var soundsBinding: Binding<Bool> {
+        Binding(get: { store.config.sounds },
+                set: { store.config.sounds = $0; store.draft.sounds = $0 })
+    }
+
     private var voicePane: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -63,6 +69,15 @@ struct MainWindow: View {
                         Text(voice.statusText).font(.system(size: 13))
                         if case .downloading(let p) = voice.status {
                             ProgressView(value: p).tint(Color(red: 0.55, green: 0.50, blue: 0.98))
+                        }
+                    }
+                }
+                Card {
+                    Toggle(isOn: soundsBinding) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Interface sounds").font(.system(size: 13, weight: .semibold))
+                            Text("Soft cues on summon, select, fire, and send.")
+                                .font(.system(size: 11)).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -109,17 +124,6 @@ struct MainWindow: View {
             .frame(maxWidth: 600, alignment: .leading)
             .padding(28)
         }
-    }
-
-    private func comingSoon(_ title: String, icon: String, detail: String) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: icon).font(.system(size: 40, weight: .thin)).foregroundStyle(.secondary)
-            Text(title).font(.system(size: 20, weight: .semibold))
-            Text(detail).font(.system(size: 12)).foregroundStyle(.secondary)
-                .multilineTextAlignment(.center).frame(maxWidth: 360)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(40)
     }
 
     private func open(_ s: String) { if let u = URL(string: s) { NSWorkspace.shared.open(u) } }

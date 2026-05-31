@@ -40,6 +40,7 @@ final class WheelController {
     private let dwellNeeded = 18    // ~0.3s at 60 Hz
 
     private var hideToken = 0
+    private var lastHighlight: Int?      // for the soft select tick
 
     var isShowing: Bool { panel?.isVisible ?? false }
 
@@ -52,10 +53,12 @@ final class WheelController {
         hideToken += 1
         stack = [haloProvider()]
         dwell = .none; dwellFrames = 0
+        lastHighlight = nil
         render()
         positionAtCursor()
         panel?.orderFrontRegardless()
         startTracking()
+        Sounds.shared.play(.summon)
     }
 
     func release() {
@@ -65,7 +68,7 @@ final class WheelController {
             return
         }
         if model.inWedge {
-            if hasSession() { fire(Action([.verb(.cancel)])) } else { dismiss() }
+            if hasSession() { fire(Action([.verb(.cancel)])) } else { Sounds.shared.play(.cancel); dismiss() }
             return
         }
         // Center.
@@ -84,6 +87,7 @@ final class WheelController {
         if managesSession(action) {
             ActionRunner.run(action)
         } else {
+            Sounds.shared.play(.fire)
             dismiss()
             ActionRunner.run(action)
         }
@@ -204,6 +208,7 @@ final class WheelController {
 
     private func track() {
         guard let panel else { return }
+        defer { announceSelection() }
         let mouse = NSEvent.mouseLocation
         let dx = mouse.x - panel.frame.midX
         let dy = mouse.y - panel.frame.midY
@@ -230,6 +235,13 @@ final class WheelController {
             model.highlighted = nil; model.inWedge = true
             advanceDwell(.none)
         }
+    }
+
+    /// A whisper-soft tick when the highlighted spoke changes (not while recording).
+    private func announceSelection() {
+        guard model.highlighted != lastHighlight else { return }
+        if model.highlighted != nil, !model.recording { Sounds.shared.play(.select) }
+        lastHighlight = model.highlighted
     }
 
     private func advanceDwell(_ target: Dwell) {
@@ -274,13 +286,23 @@ final class WheelController {
 
     private func hideCaption() { captionPanel?.orderOut(nil) }
 
-    /// Sit the caption's bottom just above the hub, centered on the wheel. The
-    /// finish ring's spokes sit out to the sides (the top is empty), so the
-    /// bubble can nestle right on top of the hub.
+    /// Sit the caption's bottom just above whatever the wheel reaches highest —
+    /// the topmost spoke, or the hub when the top is empty. Computed from the live
+    /// halo so a finish ring with a spoke up top no longer collides with the bubble.
     private func positionCaption() {
         guard let wheel = panel, let cap = captionPanel else { return }
+        let r = CGFloat(current.radius)
+        let spokeHalf: CGFloat = 34            // half a spoke chip, plus a hair
+        let hubTop: CGFloat = 56               // floor: just above the hub
+        let margin: CGFloat = 12
+        // How far above center each spoke reaches (screen y is up; the upward
+        // component for a spoke at view-angle θ is −r·sin θ). Empty → hub top.
+        let topReach = current.arc.placements(count: current.spokes.count)
+            .map { -r * CGFloat(sin($0.radians)) }
+            .max()
+            .map { max($0 + spokeHalf, hubTop) } ?? hubTop
         let x = wheel.frame.midX - cap.frame.width / 2
-        let y = wheel.frame.midY + 60        // ~8 pt above the hub's top edge
+        let y = wheel.frame.midY + topReach + margin
         cap.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
