@@ -13,6 +13,7 @@ struct HaloApp: App {
 
         SwiftUI.Settings {
             SettingsView()
+                .environment(controller.store)
                 .preferredColorScheme(.dark)
                 .frame(minWidth: 760, minHeight: 560)
         }
