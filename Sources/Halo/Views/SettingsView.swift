@@ -6,6 +6,7 @@ import AppKit
 struct SettingsView: View {
     @Environment(HaloStore.self) private var store
     @State private var recorder = ButtonRecorder()
+    @State private var showResetConfirm = false
 
     var body: some View {
         ZStack {
@@ -61,16 +62,44 @@ struct SettingsView: View {
 
     private var configCard: some View {
         Card {
-            HStack {
-                Text("Everything lives in an editable YAML file (config.yaml). Hand-edit it (or have an AI edit it); the next summon picks it up.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer()
-                Button("Reveal in Finder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([store.configURL])
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Everything lives in an editable YAML file (config.yaml). Hand-edit it (or have an AI edit it); the next summon picks it up.")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    Button("Reveal in Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting([store.configURL])
+                    }
+                    .buttonStyle(.bordered)
                 }
-                .buttonStyle(.bordered)
+
+                if let error = store.configError {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Label("Config couldn't be parsed — using defaults until it's fixed.",
+                              systemImage: "exclamationmark.triangle.fill")
+                            .font(.system(size: 12, weight: .medium)).foregroundStyle(.orange)
+                        Text(error)
+                            .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(.orange.opacity(0.12)))
+                }
+
+                HStack {
+                    Spacer()
+                    Button("Reset to Defaults…", role: .destructive) { showResetConfirm = true }
+                        .buttonStyle(.bordered)
+                }
             }
+        }
+        .confirmationDialog("Reset Halo config to defaults?", isPresented: $showResetConfirm, titleVisibility: .visible) {
+            Button("Reset Config", role: .destructive) { store.resetToStarter() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This overwrites config.yaml with the built-in defaults. Your current config will be lost.")
         }
     }
 }

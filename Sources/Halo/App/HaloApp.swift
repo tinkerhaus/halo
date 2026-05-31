@@ -21,6 +21,7 @@ struct HaloApp: App {
         MenuBarExtra {
             MenuBarMenu()
                 .environment(controller.voice)
+                .environment(controller.store)
         } label: {
             Image(nsImage: Self.menuBarIcon)
         }

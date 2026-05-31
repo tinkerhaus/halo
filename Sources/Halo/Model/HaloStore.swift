@@ -12,6 +12,10 @@ final class HaloStore {
 
     var configURL: URL { fileURL }
 
+    /// Non-nil when the on-disk config failed to parse. Halo falls back to the
+    /// last-good config (or defaults) and surfaces this in the menu & Settings.
+    private(set) var configError: String?
+
     private var watcher: DispatchSourceFileSystemObject?
 
     init() {
@@ -19,10 +23,24 @@ final class HaloStore {
             .urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appendingPathComponent("Halo", isDirectory: true)
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        self.fileURL = base.appendingPathComponent("config.yaml")
-        self.config = HaloStore.load(from: fileURL) ?? .starter()
-        if config.summonButton < 2 { config.summonButton = 4 }   // left/right are never valid summon buttons
-        if !FileManager.default.fileExists(atPath: fileURL.path) { write(config) }   // seed the file
+        let url = base.appendingPathComponent("config.yaml")
+
+        // Load, capturing a parse error so we can surface it instead of silently
+        // falling back. A broken file is left on disk (never overwritten) so it can be fixed.
+        var loaded: HaloConfig
+        var error: String?
+        do {
+            loaded = try HaloStore.parse(from: url) ?? .starter()
+        } catch let e {
+            loaded = .starter()
+            error = HaloStore.message(for: e)
+        }
+        if loaded.summonButton < 2 { loaded.summonButton = 4 }   // left/right are never valid summon buttons
+
+        self.fileURL = url
+        self.config = loaded
+        self.configError = error
+        if !FileManager.default.fileExists(atPath: url.path) { write(loaded) }   // seed the file
         startWatching()
     }
 
@@ -32,20 +50,41 @@ final class HaloStore {
         set { config.summonButton = newValue }
     }
     func halo(forApp bundleID: String?) -> Halo { config.halo(forApp: bundleID) }
-    func resetToStarter() { config = .starter() }
+
+    /// Overwrite the on-disk config with the built-in defaults.
+    func resetToStarter() {
+        configError = nil
+        config = .starter()      // didSet → save() rewrites config.yaml with clean defaults
+    }
 
     /// Re-read from disk if it changed underneath us. No-ops when identical, so
-    /// our own saves don't cause a loop.
+    /// our own saves don't cause a loop. Surfaces a parse error rather than
+    /// silently discarding the user's (broken) edits — the last good config stays live.
     func reload() {
-        guard let fresh = HaloStore.load(from: fileURL), fresh != config else { return }
-        config = fresh
+        do {
+            guard let fresh = try HaloStore.parse(from: fileURL) else { return }
+            configError = nil
+            if fresh != config { config = fresh }
+        } catch {
+            configError = HaloStore.message(for: error)
+        }
     }
 
     // MARK: - Disk
 
-    private static func load(from url: URL) -> HaloConfig? {
+    /// Decode the config from disk. Returns nil if the file is missing/unreadable;
+    /// throws if it's present but malformed (e.g. a YAML syntax error).
+    private static func parse(from url: URL) throws -> HaloConfig? {
         guard let yaml = try? String(contentsOf: url, encoding: .utf8) else { return nil }
-        return try? YAMLDecoder().decode(HaloConfig.self, from: yaml)
+        return try YAMLDecoder().decode(HaloConfig.self, from: yaml)
+    }
+
+    /// A short, single-line description of a config parse failure.
+    private static func message(for error: Error) -> String {
+        var text = "\(error)".replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespaces)
+        if text.count > 180 { text = String(text.prefix(180)) + "…" }
+        return text
     }
 
     /// A self-documenting header re-emitted on every save (YAML `#` comments).
