@@ -81,9 +81,10 @@ extension Spoke: Codable {
 /// A ring of spokes: the arc they fan across, how far out they sit, and the
 /// spokes themselves. Recursive — a spoke may open another `Halo`.
 ///
-/// `center` is what release-at-center fires. When omitted it defaults per
-/// context (root wheel → dictate; a sub-ring → back out), resolved by the
-/// wheel controller — so existing configs are unchanged.
+/// `center` is what release-at-center fires. When omitted it defaults to
+/// dictation (at any depth), resolved by the wheel controller. Backing out of a
+/// sub-ring is a separate gesture — rest at the center — so existing configs are
+/// unchanged.
 struct Halo: Codable, Equatable {
     /// A halo never fans more than this many spokes — past ~7 the flick targets
     /// get too cramped to hit reliably; use a `well` to nest more. The editor
@@ -118,29 +119,5 @@ struct Halo: Codable, Equatable {
         radius = (try? c.decodeIfPresent(Int.self, forKey: .radius)) ?? 124
         spokes = (try? c.decodeIfPresent([Spoke].self, forKey: .spokes)) ?? []
         if let steps = try? c.decodeIfPresent([Step].self, forKey: .center) { center = Action(steps) }
-    }
-}
-
-extension Halo {
-    /// Stable identity for the auto-generated Back spoke (so the editor preview
-    /// doesn't recreate it on every render).
-    static let backSpokeID = UUID(uuidString: "0000BACC-0000-0000-0000-000000000000")!
-
-    /// The ring shown when a well opens: the child's spokes plus a **Back** spoke,
-    /// laid out on the *parent's* arc so Back sits where the well spoke was. Used by
-    /// both the live wheel and the editor preview, so they always agree. Returns the
-    /// composed halo and the index of the Back spoke within it.
-    static func subRing(opening child: Halo, on parent: Halo, wellIndex: Int) -> (halo: Halo, backIndex: Int) {
-        let parentAngles = parent.arc.placements(count: parent.spokes.count)
-        let wellAngle = parentAngles.indices.contains(wellIndex) ? parentAngles[wellIndex] : parent.arc.center
-        var spokes = Array(child.spokes.prefix(Halo.maxSpokes - 1))   // leave a slot for Back
-        let back = Spoke(id: backSpokeID, label: "Back", glyph: "chevron.backward", content: .performs(Action([])))
-        let angles = parent.arc.placements(count: spokes.count + 1)
-        var backIndex = 0, best = Double.greatestFiniteMagnitude
-        for (i, a) in angles.enumerated() where abs(Arc.delta(a, wellAngle)) < best {
-            best = abs(Arc.delta(a, wellAngle)); backIndex = i
-        }
-        spokes.insert(back, at: backIndex)
-        return (Halo(arc: parent.arc, radius: parent.radius, spokes: spokes), backIndex)
     }
 }

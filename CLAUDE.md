@@ -67,9 +67,9 @@ Dependencies: **Yams** (YAML config), **WhisperKit** (on-device transcription).
   **ignores mouse events** — selection is computed purely from the cursor's angle, so
   the app underneath keeps focus and receives the keystroke.
 - Arcs are never full circles; the leftover wedge is the cancel zone.
-- Sub-rings (wells) **expand on dwell** onto the *parent's* arc, with a **Back** spoke
-  where the well was — dwell Back to return (an arm-guard stops an instant bounce-back).
-  Release is always terminal (fire / dictate / cancel). Releasing at the **center always
+- Sub-rings (wells) **expand on dwell** into their own ring (own arc / radius / spokes);
+  **rest at the center to back out** one level (the hub shows ↩ "Hold to go back").
+  Release is always terminal (fire / dictate / cancel). Releasing at the **center
   dictates** at any depth (a finish ring's center sends instead).
 - Voice mode (`config.voice.mode`): `handsFree` (release at center → session; press
   summon again to stop) or `pushToTalk` (hold at center; release to send). The hub

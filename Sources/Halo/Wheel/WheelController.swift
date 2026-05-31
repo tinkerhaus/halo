@@ -10,8 +10,8 @@ import SwiftUI
 ///   • in the wedge → cancel (discard a dictation if one is active, else dismiss)
 ///   • at center    → dictate (at *any* depth); a finish ring's center sends instead
 ///
-/// A well opens onto the *parent's* ring with a **Back** spoke sitting where the
-/// well was — so the same place takes you in and back out (dwell Back to return).
+/// A well opens its own nested ring; you **back out by resting at the center** — a
+/// short dwell there pops one level (release is still terminal).
 ///
 /// Dictation: release-at-center starts a hands-free session (the hub becomes the
 /// live recording UI). Pressing summon again presents the *finish* halo — release
@@ -34,17 +34,16 @@ final class WheelController {
     private let canvas: CGFloat = 380
     private let deadZone: CGFloat = 34
 
-    /// A displayed ring plus which of its spokes is the Back button (nil at the root).
-    private struct Level { let halo: Halo; let backIndex: Int? }
-    private var stack: [Level] = []
-    private var current: Halo { stack.last?.halo ?? Halo() }
-    private var currentBackIndex: Int? { stack.last?.backIndex }
+    private var stack: [Halo] = []
+    private var current: Halo { stack.last ?? Halo() }
 
-    private enum Dwell: Equatable { case none, well(Int), back }
+    private enum Dwell: Equatable { case none, well(Int), center }
     private var dwell: Dwell = .none
     private var dwellFrames = 0
     private let dwellNeeded = 18    // ~0.3s at 60 Hz
-    private var backArmed = false   // suppress an instant bounce-back right after a well opens
+    private var wellArmed = true        // a well-dwell may open (cleared right after one opens)
+    private var suppressedWell: Int?    // spoke under the cursor right after an open — wait for it to be left
+    private var centerArmed = true      // a center-dwell may back out (cleared right after one fires)
 
     private var hideToken = 0
     private var lastHighlight: Int?      // for the soft select tick
@@ -58,9 +57,9 @@ final class WheelController {
     func present() {
         ensurePanel()
         hideToken += 1
-        stack = [Level(halo: haloProvider(), backIndex: nil)]
+        stack = [haloProvider()]
         dwell = .none; dwellFrames = 0
-        backArmed = true
+        wellArmed = true; suppressedWell = nil; centerArmed = true
         lastHighlight = nil
         render()
         positionAtCursor()
@@ -71,7 +70,6 @@ final class WheelController {
 
     func release() {
         if let h = model.highlighted {
-            if h == currentBackIndex { dismiss(); return }       // released on Back → just close
             let spoke = current.spokes.indices.contains(h) ? current.spokes[h] : nil
             if case .performs(let action)? = spoke?.content { fire(action) } else { dismiss() }
             return
@@ -196,16 +194,15 @@ final class WheelController {
     private func expand(_ index: Int) {
         guard current.spokes.indices.contains(index),
               case .opens(let child) = current.spokes[index].content else { return }
-        let built = Halo.subRing(opening: child, on: current, wellIndex: index)
-        backArmed = false                       // require leaving Back once before it can fire
-        stack.append(Level(halo: built.halo, backIndex: built.backIndex))
+        stack.append(child)                      // the well's own ring (its own arc/radius/spokes)
+        wellArmed = false; suppressedWell = nil  // require leaving this spot before another well opens
         render()
     }
 
     private func pop() {
         guard stack.count > 1 else { return }
         stack.removeLast()
-        backArmed = true
+        centerArmed = false        // require leaving the center before backing out another level
         render()
     }
 
@@ -225,29 +222,47 @@ final class WheelController {
         let dx = mouse.x - panel.frame.midX
         let dy = mouse.y - panel.frame.midY
 
-        guard hypot(dx, dy) >= deadZone else {  // center deadzone — always dictates on release
+        guard hypot(dx, dy) >= deadZone else {  // center deadzone
             model.highlighted = nil; model.inWedge = false
-            backArmed = true                               // cursor is off the Back spoke
-            model.modelLoading = current.center == nil && !canRecord()
-            advanceDwell(.none)
+            rearmWell()
+            if stack.count > 1 {
+                model.modelLoading = false
+                advanceDwell(centerArmed ? .center : .none)    // sub-ring: rest at center to back out (once)
+            } else {
+                // Root center: release dictates; show "loading" only while that
+                // default applies and the model isn't ready yet.
+                model.modelLoading = current.center == nil && !canRecord()
+                advanceDwell(.none)
+            }
             return
         }
         model.modelLoading = false
+        centerArmed = true                                     // cursor left the center → a back-out may fire again
         let cursor = Angle.radians(atan2(-dy, dx))
         if let sel = current.arc.selection(forCursor: cursor, count: current.spokes.count) {
             model.highlighted = sel; model.inWedge = false
-            if sel == currentBackIndex {
-                advanceDwell(backArmed ? .back : .none)    // dwell to go back, once armed
-            } else {
-                backArmed = true
-                advanceDwell(current.spokes[sel].isWell ? .well(sel) : .none)
-            }
+            advanceDwell(wellTarget(sel))
         } else {
             model.highlighted = nil; model.inWedge = true
-            backArmed = true
+            rearmWell()
             advanceDwell(.none)
         }
     }
+
+    /// A well opens on dwell — but only once the cursor has *settled fresh* on it, not
+    /// while it's still sitting where the previous well just opened. Without this, a
+    /// well stacked at the same angle as its parent would cascade open level after
+    /// level on a single held cursor. Moving to a *different* well, or off onto the
+    /// center / wedge / a non-well spoke, re-arms it.
+    private func wellTarget(_ sel: Int) -> Dwell {
+        guard current.spokes[sel].isWell else { rearmWell(); return .none }
+        if wellArmed { return .well(sel) }
+        if suppressedWell == nil { suppressedWell = sel }          // the spot under the cursor right after an open
+        if sel != suppressedWell { rearmWell(); return .well(sel) } // moved to another well → fine
+        return .none                                               // still on the just-opened spot → wait
+    }
+
+    private func rearmWell() { wellArmed = true; suppressedWell = nil }
 
     /// A whisper-soft tick when the highlighted spoke changes (not while recording).
     private func announceSelection() {
@@ -263,7 +278,7 @@ final class WheelController {
         dwell = .none; dwellFrames = 0
         switch target {
         case .well(let i):   expand(i)
-        case .back:          pop()
+        case .center:        pop()
         case .none:          break
         }
     }
