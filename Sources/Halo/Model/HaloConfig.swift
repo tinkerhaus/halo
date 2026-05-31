@@ -14,13 +14,23 @@ enum Key {
 /// are omitted a built-in plain-Send ring is used.
 struct VoiceConfig: Codable, Equatable {
     var finish: Halo?
+    /// Mute system output while recording (restores prior state afterward).
+    var muteWhileRecording = false
+    /// Pause the Now-Playing app while recording (tap Play/Pause to resume after).
+    var pauseMediaWhileRecording = false
 
-    init(finish: Halo? = nil) { self.finish = finish }
+    init(finish: Halo? = nil, muteWhileRecording: Bool = false, pauseMediaWhileRecording: Bool = false) {
+        self.finish = finish
+        self.muteWhileRecording = muteWhileRecording
+        self.pauseMediaWhileRecording = pauseMediaWhileRecording
+    }
 
-    enum CodingKeys: String, CodingKey { case finish }
+    enum CodingKeys: String, CodingKey { case finish, muteWhileRecording, pauseMediaWhileRecording }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         finish = try? c.decodeIfPresent(Halo.self, forKey: .finish)
+        muteWhileRecording = (try? c.decodeIfPresent(Bool.self, forKey: .muteWhileRecording)) ?? false
+        pauseMediaWhileRecording = (try? c.decodeIfPresent(Bool.self, forKey: .pauseMediaWhileRecording)) ?? false
     }
 }
 

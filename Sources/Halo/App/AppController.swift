@@ -44,8 +44,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         summon.button = { [weak self] in self?.store.summonButton ?? 4 }
         summon.onPress = { [weak self] in
             guard let self else { return }
-            if self.sessionActive { self.voice.stopRecording() }   // done talking → finish ring
-            self.wheel.present()
+            self.wheel.present()                 // finish ring if a session is active, else the action wheel
+            if self.sessionActive { self.finishRecording() }
         }
         summon.onRelease = { [weak self] in self?.wheel.release() }
         summon.start()
@@ -59,15 +59,26 @@ final class AppController: NSObject, NSApplicationDelegate {
     private func startSession() {
         guard voice.isReady else { return }
         sessionActive = true
+        let v = store.config.voice
+        SystemAudio.quiet(mute: v.muteWhileRecording, pauseMedia: v.pauseMediaWhileRecording)
         voice.startRecording()
         wheel.beginVoiceSession()            // hub stays up as the live recording UI
     }
 
-    /// `send`: transcribe the stopped recording, inject it, then continue the
-    /// step list (e.g. a trailing Return) once the text has landed.
+    /// Summon pressed during a session: you're done talking. Stop recording,
+    /// let other audio resume, and transcribe right away so the finish ring can
+    /// preview the text before you commit.
+    private func finishRecording() {
+        voice.stopRecording()
+        SystemAudio.restore()
+        wheel.markTranscribing()             // hub → "Transcribing…" until the preview lands
+        voice.transcribe { [weak self] text in self?.wheel.showTranscript(text) }
+    }
+
+    /// `send`: inject the (already-shown) transcript — waiting if it's somehow not
+    /// transcribed yet — then continue the step list (e.g. a trailing Return).
     private func send(_ done: @escaping () -> Void) {
-        wheel.markTranscribing()             // hub → "Transcribing…"
-        voice.transcribe { [weak self] text in
+        voice.whenTranscriptReady { [weak self] text in
             self?.voice.inject(text)
             self?.endSession()
             done()
@@ -81,6 +92,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private func endSession() {
         sessionActive = false
+        SystemAudio.restore()                // idempotent — covers cancel before finishRecording
         wheel.endVoiceSession()
     }
 

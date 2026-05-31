@@ -32,6 +32,10 @@ final class WheelModel {
     var recording = false
     /// Transcription is running (session winding down).
     var transcribing = false
+    /// This is the finish ring (post-recording): the center commits/sends.
+    var finishing = false
+    /// The transcript to preview before sending (empty until it's ready).
+    var transcript = ""
     /// Recent mic levels (0…1) for the live waveform in the hub.
     var levels: [Float] = []
 }

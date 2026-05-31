@@ -119,22 +119,28 @@ final class WheelController {
         hideToken += 1                          // cancel any pending hide
         tracker?.invalidate(); tracker = nil
         model.highlighted = nil; model.inWedge = false; model.modelLoading = false
-        model.transcribing = false
+        model.transcribing = false; model.finishing = false; model.transcript = ""
         model.recording = true
         model.levels = []
         startLevelTimer()
     }
 
-    /// Recording stopped — show transcribing in the hub until it completes.
+    /// Finish ring is up; transcription is running — show it in the hub.
     func markTranscribing() {
         stopLevelTimer()
         model.recording = false
         model.transcribing = true
     }
 
+    /// The transcript is ready — preview it in the hub (release at center to send).
+    func showTranscript(_ text: String) {
+        model.transcribing = false
+        model.transcript = text
+    }
+
     /// Session finished — collapse the hub away.
     func endVoiceSession() {
-        model.transcribing = false
+        model.transcribing = false; model.transcript = ""; model.finishing = false
         dismiss()
     }
 
@@ -162,6 +168,8 @@ final class WheelController {
         model.inWedge = false
         model.recording = false
         model.transcribing = false
+        model.finishing = hasSession()      // presenting during a session ⇒ this is the finish ring
+        model.transcript = ""
         model.modelLoading = false
         model.levels = []
         model.revealID += 1

@@ -67,6 +67,7 @@ final class Voice {
 
     func startRecording() {
         guard isReady, recorder == nil else { return }
+        pendingTranscript = nil; transcriptWaiters = []      // fresh session
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("halo-\(UUID().uuidString).wav")
         let settings: [String: Any] = [
@@ -111,6 +112,7 @@ final class Voice {
         recorder?.stop(); recorder = nil
         if let url = recordingURL { try? FileManager.default.removeItem(at: url) }
         recordingURL = nil
+        pendingTranscript = nil; transcriptWaiters = []
         if status == .recording { status = .ready }
     }
 
@@ -122,18 +124,22 @@ final class Voice {
         if status == .recording { status = .ready }
     }
 
-    /// The most recent transcript (readable state — also the hinge a future
-    /// voice-command runner would route instead of injecting).
-    private(set) var lastTranscript = ""
+    /// The transcript awaiting commit — `nil` until transcription finishes (then
+    /// the empty string if nothing was said). Set on `transcribe`, consumed by
+    /// `inject`, dropped by `cancel`/`startRecording`. Also the hinge a future
+    /// voice-command runner would route instead of injecting.
+    private(set) var pendingTranscript: String?
+    private var transcriptWaiters: [(String) -> Void] = []
 
     /// Exactly what we last injected, so `undoLast()` can delete precisely that
     /// — and nothing else. Cleared once consumed or superseded.
     private(set) var lastInjected: String?
 
-    /// Transcribe the stopped recording, then call back on the main thread with
-    /// the text (empty if nothing usable). No-op if there's no recording.
-    func transcribe(_ completion: @escaping (String) -> Void) {
-        guard let url = recordingURL else { completion(""); return }
+    /// Transcribe the stopped recording. Stores the result for preview, calls
+    /// `onPreview` (to show it in the hub), and releases anything waiting in
+    /// `send`. No-op if there's no recording.
+    func transcribe(onPreview: @escaping (String) -> Void) {
+        guard let url = recordingURL else { resolveTranscript(""); onPreview(""); return }
         recordingURL = nil
         status = .transcribing
         let whisper = whisper
@@ -152,15 +158,30 @@ final class Voice {
             }
             try? FileManager.default.removeItem(at: url)
             DispatchQueue.main.async {
-                self?.lastTranscript = text
                 self?.status = .ready
-                completion(text)
+                self?.resolveTranscript(text)
+                onPreview(text)
             }
         }
     }
 
+    private func resolveTranscript(_ text: String) {
+        pendingTranscript = text
+        let waiters = transcriptWaiters
+        transcriptWaiters = []
+        waiters.forEach { $0(text) }
+    }
+
+    /// Call back with the transcript as soon as it's ready (immediately if it
+    /// already is). Used by `send` after you commit on the finish ring.
+    func whenTranscriptReady(_ completion: @escaping (String) -> Void) {
+        if let pendingTranscript { completion(pendingTranscript) }
+        else { transcriptWaiters.append(completion) }
+    }
+
     /// Paste the transcript into the frontmost app and remember it for undo.
     func inject(_ text: String) {
+        pendingTranscript = nil
         guard !text.isEmpty else { return }
         Keyboard.type(text)
         lastInjected = text

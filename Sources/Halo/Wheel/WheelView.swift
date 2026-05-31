@@ -27,7 +27,7 @@ struct WheelView: View {
                 .opacity(Double(min(1, reveal * 1.6)))
                 .position(centerPoint)
 
-            if !model.recording && !model.transcribing {
+            if !model.recording {           // finish-ring spokes stay visible while transcribing/previewing
                 ForEach(model.spokes) { spoke in
                     spokeView(spoke)
                         .scaleEffect(reveal)
@@ -70,19 +70,31 @@ struct WheelView: View {
                 WaveformView(levels: model.levels, tint: Color(red: 1.0, green: 0.35, blue: 0.45))
                     .frame(width: 72, height: 28)
                 Text("Listening…").font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.7))
-            } else if model.transcribing {
-                WaveformView(levels: model.levels, tint: .white.opacity(0.35))
-                    .frame(width: 72, height: 28)
-                Text("Transcribing…").font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.7))
-            } else if model.modelLoading {
-                Image(systemName: "arrow.down.circle.dotted").font(.system(size: 20, weight: .semibold))
-                Text("Loading model…").font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.6))
             } else if let h, model.spokes.indices.contains(h) {
                 Image(systemName: model.spokes[h].glyph).font(.system(size: 21, weight: .semibold))
                 Text(model.spokes[h].label).font(.system(size: 13, weight: .bold, design: .rounded))
             } else if model.inWedge {
                 Image(systemName: "xmark").font(.system(size: 20, weight: .semibold))
                 Text("Release to cancel").font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.6))
+            } else if model.transcribing {
+                WaveformView(levels: model.levels, tint: .white.opacity(0.35))
+                    .frame(width: 72, height: 28)
+                Text("Transcribing…").font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.7))
+            } else if !model.transcript.isEmpty {
+                Text(model.transcript)
+                    .font(.system(size: 11, weight: .medium))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(4)
+                    .minimumScaleFactor(0.6)
+                    .foregroundStyle(.white.opacity(0.92))
+                    .padding(.horizontal, 9)
+                Text("Release to send").font(.system(size: 8.5, weight: .medium)).foregroundStyle(.white.opacity(0.55))
+            } else if model.modelLoading {
+                Image(systemName: "arrow.down.circle.dotted").font(.system(size: 20, weight: .semibold))
+                Text("Loading model…").font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.6))
+            } else if model.finishing {
+                Image(systemName: "paperplane.fill").font(.system(size: 19, weight: .semibold))
+                Text("Release to send").font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.6))
             } else if model.depth > 0 {
                 Image(systemName: "arrow.uturn.backward").font(.system(size: 20, weight: .semibold))
                 Text("Hold to go back").font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.6))

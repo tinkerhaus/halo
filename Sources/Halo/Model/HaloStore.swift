@@ -59,6 +59,8 @@ final class HaloStore {
     #                Left/right (0/1) are not allowed.
     # voice.finish : the default finish ring (a halo) shown when you stop a dictation.
     #                A profile may set its own `finish`; omit both for a built-in plain-Send ring.
+    # voice.muteWhileRecording       : mute system output while recording (default false).
+    # voice.pauseMediaWhileRecording : pause the Now-Playing app while recording, resume after (default false).
     # fallback     : the wheel shown when no profile matches the frontmost app.
     # profiles     : list of { name, apps: [bundleID], halo, finish? }. The frontmost app picks
     #                the profile; most specific (fewest apps) wins, so a 1-app profile overrides a group.
