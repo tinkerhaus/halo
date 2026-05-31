@@ -74,7 +74,7 @@ struct HaloConfig: Codable, Equatable {
 
     // MARK: - Starter configuration
 
-    private static func arc(_ span: Double) -> Arc { Arc(spanDegrees: span, centerDegrees: -90) }
+    private static func arc(_ span: Int) -> Arc { Arc(spanDegrees: span, centerDegrees: -90) }
 
     static func starter() -> HaloConfig {
         HaloConfig(summonButton: 4, fallback: fallbackHalo(),

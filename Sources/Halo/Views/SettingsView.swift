@@ -62,7 +62,7 @@ struct SettingsView: View {
     private var configCard: some View {
         Card {
             HStack {
-                Text("The wheel layout lives in an editable JSON file. Hand-edit it (or have an AI edit it); the next summon picks it up.")
+                Text("Everything lives in an editable YAML file (config.yaml). Hand-edit it (or have an AI edit it); the next summon picks it up.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer()

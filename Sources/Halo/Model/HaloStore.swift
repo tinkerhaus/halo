@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import Yams
 
 /// The single source of truth for Halo, backed by `halo.json`. Everything —
 /// summon button, fallback wheel, per-app profiles — lives in this one file.
@@ -18,7 +19,7 @@ final class HaloStore {
             .urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appendingPathComponent("Halo", isDirectory: true)
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        self.fileURL = base.appendingPathComponent("halo.json")
+        self.fileURL = base.appendingPathComponent("config.yaml")
         self.config = HaloStore.load(from: fileURL) ?? .starter()
         if !FileManager.default.fileExists(atPath: fileURL.path) { write(config) }   // seed the file
         startWatching()
@@ -42,9 +43,33 @@ final class HaloStore {
     // MARK: - Disk
 
     private static func load(from url: URL) -> HaloConfig? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(HaloConfig.self, from: data)
+        guard let yaml = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        return try? YAMLDecoder().decode(HaloConfig.self, from: yaml)
     }
+
+    /// A self-documenting header re-emitted on every save (YAML `#` comments).
+    /// Keeps the file explained in-place; survives round-trips because we
+    /// regenerate it (your own comments are dropped when the app rewrites).
+    private static let header = """
+    # Halo configuration — this whole file controls the app.
+    # Edits apply on the next summon (the file is watched live).
+    #
+    # summonButton : mouse button that opens the wheel (NSEvent number; 2=middle, 3=back, 4=forward).
+    # fallback     : the wheel shown when no profile matches the frontmost app.
+    # profiles     : list of { name, apps: [bundleID], halo } — used when the frontmost app is in `apps`.
+    # halo         : { arc: { spanDegrees, centerDegrees }, radius, spokes: [...] }
+    #                The arc never closes a full circle; the empty wedge = release-to-cancel.
+    #                centerDegrees -90 = straight up.
+    # spoke        : { label, glyph, <exactly one of>: key | text | steps | well }
+    #                key   : a chord string, e.g. "cmd+shift+z", "ctrl+c", "tab", "cmd+[", "up"
+    #                        mods: cmd|ctrl|opt|shift   keys: a-z 0-9, return/enter, esc, tab, space,
+    #                        delete, up/down/left/right, home/end, and [ ] / \\\\ ; ' , . - = `
+    #                text  : type literal text
+    #                steps : list of { key|text|paste|pause } for multi-step macros (paste: N, pause: ms)
+    #                well  : a nested halo (a sub-ring you dwell into): { arc, radius, spokes }
+    #                glyph : an SF Symbol name, e.g. "arrow.up", "stop.circle"
+
+    """
 
     private func save() {
         let snapshot = config
@@ -52,9 +77,9 @@ final class HaloStore {
     }
 
     private func write(_ config: HaloConfig) {
-        let enc = JSONEncoder()
-        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        if let data = try? enc.encode(config) { try? data.write(to: fileURL, options: .atomic) }
+        guard let yaml = try? YAMLEncoder().encode(config) else { return }
+        let out = HaloStore.header + yaml
+        try? out.data(using: .utf8)?.write(to: fileURL, options: .atomic)
     }
 
     /// Watch `halo.json` and reload on external edits. Re-arms after each event

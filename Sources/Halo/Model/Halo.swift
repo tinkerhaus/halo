@@ -75,10 +75,10 @@ extension Spoke: Codable {
 /// spokes themselves. Recursive — a spoke may open another `Halo`.
 struct Halo: Codable, Equatable {
     var arc = Arc()
-    var radius: Double = 124
+    var radius: Int = 124            // points from the hub to each spoke
     var spokes: [Spoke] = []
 
-    init(arc: Arc = Arc(), radius: Double = 124, spokes: [Spoke] = []) {
+    init(arc: Arc = Arc(), radius: Int = 124, spokes: [Spoke] = []) {
         self.arc = arc
         self.radius = radius
         self.spokes = spokes
@@ -89,7 +89,7 @@ struct Halo: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         arc = (try? c.decodeIfPresent(Arc.self, forKey: .arc)) ?? Arc()
-        radius = (try? c.decodeIfPresent(Double.self, forKey: .radius)) ?? 124
+        radius = (try? c.decodeIfPresent(Int.self, forKey: .radius)) ?? 124
         spokes = (try? c.decodeIfPresent([Spoke].self, forKey: .spokes)) ?? []
     }
 }
