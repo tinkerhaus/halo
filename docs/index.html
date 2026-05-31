@@ -177,7 +177,7 @@
         <a class="btn ghost" href="https://github.com/tinkerhaus/halo/releases">All releases</a>
       </div>
       <div class="note">
-        <b>First launch:</b> this build is signed with a self-signed certificate (not yet notarized), so macOS will warn you once. Right-click <b>Halo.app → Open</b> and confirm, or run<br>
+        <b>First launch:</b> this build is signed with a self-signed certificate (not yet notarized), so macOS blocks it once. Try to open Halo, then go to <b>System Settings → Privacy &amp; Security</b> and click <b>Open Anyway</b> next to Halo. Or skip the dance — run this in Terminal before launching:<br>
         <code>xattr -dr com.apple.quarantine /Applications/Halo.app</code><br>
         Then grant <b>Accessibility</b>, <b>Input Monitoring</b>, and <b>Microphone</b> in Privacy &amp; Security, and relaunch.
       </div>
