@@ -1,32 +1,45 @@
 import AppKit
 
-/// Watches a configured mouse button and reports press / release. It *consumes*
-/// the button while bound, so summoning the wheel doesn't also fire the button's
-/// normal job (back / forward / etc.). Requires Accessibility permission.
+/// Watches the configured mouse button and reports press / release. Listens two
+/// ways and de-dupes: a `CGEventTap` (which can *consume* the button so it won't
+/// also do back/forward) and `MouseHID` (which catches buttons that drivers like
+/// Logitech Options+ intercept before they become events). Needs Accessibility
+/// (tap) and Input Monitoring (HID).
 final class Summon {
-    /// `NSEvent` button number: 2 = middle, 3 = back (side), 4 = forward (side), …
-    var button: Int = 4
+    /// Which `NSEvent` button summons the wheel. Read fresh each event.
+    var button: () -> Int = { 4 }
     var onPress: (() -> Void)?
     var onRelease: (() -> Void)?
 
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
+    private var pressed = false          // de-dupes tap vs HID
 
     func start() {
+        startTap()
+        MouseHID.shared.start()
+        MouseHID.shared.subscribe { [weak self] button, pressed in
+            guard let self, button == self.button() else { return }
+            pressed ? self.beginPress() : self.endPress()
+        }
+    }
+
+    private func beginPress() { guard !pressed else { return }; pressed = true; onPress?() }
+    private func endPress()   { guard pressed else { return }; pressed = false; onRelease?() }
+
+    // MARK: - Event tap (consumes the button when it reaches us as an event)
+
+    private func startTap() {
         guard tap == nil else { return }
         let mask = (1 << CGEventType.otherMouseDown.rawValue) | (1 << CGEventType.otherMouseUp.rawValue)
         guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
+            tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
             eventsOfInterest: CGEventMask(mask),
             callback: { _, type, event, refcon in
-                let summon = Unmanaged<Summon>.fromOpaque(refcon!).takeUnretainedValue()
-                return summon.handle(type: type, event: event)
+                Unmanaged<Summon>.fromOpaque(refcon!).takeUnretainedValue().handle(type, event)
             },
             userInfo: Unmanaged.passUnretained(self).toOpaque()
         ) else { return }
-
         self.tap = tap
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         self.source = source
@@ -34,18 +47,17 @@ final class Summon {
         CGEvent.tapEnable(tap: tap, enable: true)
     }
 
-    private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
-        // The system disables a tap that blocks too long — just re-enable it.
+    private func handle(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             return Unmanaged.passUnretained(event)
         }
-        guard Int(event.getIntegerValueField(.mouseEventButtonNumber)) == button else {
+        guard Int(event.getIntegerValueField(.mouseEventButtonNumber)) == button() else {
             return Unmanaged.passUnretained(event)
         }
         switch type {
-        case .otherMouseDown: DispatchQueue.main.async { self.onPress?() }; return nil
-        case .otherMouseUp:   DispatchQueue.main.async { self.onRelease?() }; return nil
+        case .otherMouseDown: DispatchQueue.main.async { self.beginPress() }; return nil
+        case .otherMouseUp:   DispatchQueue.main.async { self.endPress() };   return nil
         default:              return Unmanaged.passUnretained(event)
         }
     }
