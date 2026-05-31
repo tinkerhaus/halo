@@ -76,19 +76,6 @@ struct WheelView: View {
             } else if model.inWedge {
                 Image(systemName: "xmark").font(.system(size: 20, weight: .semibold))
                 Text("Release to cancel").font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.6))
-            } else if model.transcribing {
-                WaveformView(levels: model.levels, tint: .white.opacity(0.35))
-                    .frame(width: 72, height: 28)
-                Text("Transcribing…").font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.7))
-            } else if !model.transcript.isEmpty {
-                Text(model.transcript)
-                    .font(.system(size: 11, weight: .medium))
-                    .multilineTextAlignment(.center)
-                    .lineLimit(4)
-                    .minimumScaleFactor(0.6)
-                    .foregroundStyle(.white.opacity(0.92))
-                    .padding(.horizontal, 9)
-                Text("Release to send").font(.system(size: 8.5, weight: .medium)).foregroundStyle(.white.opacity(0.55))
             } else if model.modelLoading {
                 Image(systemName: "arrow.down.circle.dotted").font(.system(size: 20, weight: .semibold))
                 Text("Loading model…").font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.6))
@@ -147,5 +134,44 @@ struct WaveformView: View {
                 ctx.fill(Path(roundedRect: rect, cornerRadius: barW / 2), with: .color(tint))
             }
         }
+    }
+}
+
+/// The dictation transcript, shown in its own floating panel *above* the wheel —
+/// roomy and readable instead of cramped inside the hub. Bottom-anchored, so the
+/// bubble sits just above the wheel and grows upward as the text gets longer.
+struct TranscriptCaption: View {
+    let model: WheelModel
+
+    var body: some View {
+        VStack {
+            Spacer(minLength: 0)
+            if model.transcribing || !model.transcript.isEmpty {
+                bubble.transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .bottom)))
+            }
+        }
+        .frame(width: 380, height: 220, alignment: .bottom)
+        .animation(.spring(response: 0.3, dampingFraction: 0.82), value: model.transcript)
+        .animation(.easeOut(duration: 0.18), value: model.transcribing)
+    }
+
+    private var bubble: some View {
+        let placeholder = model.transcript.isEmpty
+        return Text(placeholder ? "Transcribing…" : model.transcript)
+            .font(.system(size: 14, weight: .medium))
+            .italic(placeholder)
+            .multilineTextAlignment(.center)
+            .lineLimit(8)
+            .fixedSize(horizontal: false, vertical: true)
+            .foregroundStyle(.white.opacity(placeholder ? 0.6 : 0.95))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 11)
+            .frame(maxWidth: 320)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(red: 0.10, green: 0.11, blue: 0.15).opacity(0.97)))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(.white.opacity(0.12), lineWidth: 1))
+            .shadow(color: .black.opacity(0.45), radius: 16, y: 6)
+            .padding(.bottom, 8)
     }
 }

@@ -25,6 +25,7 @@ final class WheelController {
 
     private let model = WheelModel()
     private var panel: NSPanel?
+    private var captionPanel: NSPanel?      // the transcript bubble, floating above the wheel
     private var tracker: Timer?
 
     private let canvas: CGFloat = 380
@@ -98,6 +99,7 @@ final class WheelController {
     func dismiss() {
         tracker?.invalidate(); tracker = nil
         stopLevelTimer()
+        hideCaption()
         dwell = .none; dwellFrames = 0
         model.recording = false; model.transcribing = false; model.modelLoading = false
         model.collapseID += 1
@@ -122,14 +124,16 @@ final class WheelController {
         model.transcribing = false; model.finishing = false; model.transcript = ""
         model.recording = true
         model.levels = []
+        hideCaption()
         startLevelTimer()
     }
 
-    /// Finish ring is up; transcription is running — show it in the hub.
+    /// Finish ring is up; transcription is running — surface it in the caption above the wheel.
     func markTranscribing() {
         stopLevelTimer()
         model.recording = false
         model.transcribing = true
+        showCaption()
     }
 
     /// The transcript is ready — preview it in the hub (release at center to send).
@@ -172,6 +176,7 @@ final class WheelController {
         model.transcript = ""
         model.modelLoading = false
         model.levels = []
+        hideCaption()
         model.revealID += 1
     }
 
@@ -257,6 +262,53 @@ final class WheelController {
             }
         }
         panel.setFrameOrigin(NSPoint(x: center.x - canvas / 2, y: center.y - canvas / 2))
+    }
+
+    // MARK: - Transcript caption (a second panel floating above the wheel)
+
+    private func showCaption() {
+        ensureCaptionPanel()
+        positionCaption()
+        captionPanel?.orderFrontRegardless()
+    }
+
+    private func hideCaption() { captionPanel?.orderOut(nil) }
+
+    /// Sit the caption's bottom just above the hub, centered on the wheel. The
+    /// finish ring's spokes sit out to the sides (the top is empty), so the
+    /// bubble can nestle right on top of the hub.
+    private func positionCaption() {
+        guard let wheel = panel, let cap = captionPanel else { return }
+        let x = wheel.frame.midX - cap.frame.width / 2
+        let y = wheel.frame.midY + 60        // ~8 pt above the hub's top edge
+        cap.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+
+    private func ensureCaptionPanel() {
+        guard captionPanel == nil else { return }
+        let hosting = NSHostingView(rootView: TranscriptCaption(model: model))
+        hosting.setFrameSize(NSSize(width: 380, height: 220))
+        hosting.wantsLayer = true
+        hosting.layer?.backgroundColor = NSColor.clear.cgColor
+        hosting.layer?.isOpaque = false
+        hosting.layer?.masksToBounds = false
+
+        let p = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 220),
+            styleMask: [.nonactivatingPanel, .borderless, .fullSizeContentView],
+            backing: .buffered, defer: false
+        )
+        p.isFloatingPanel = true
+        p.level = .statusBar
+        p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
+        p.hasShadow = false
+        p.isOpaque = false
+        p.backgroundColor = .clear
+        p.hidesOnDeactivate = false
+        p.ignoresMouseEvents = true
+        p.becomesKeyOnlyIfNeeded = true
+        p.contentView = hosting
+        captionPanel = p
     }
 
     private func ensurePanel() {
