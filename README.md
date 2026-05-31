@@ -56,8 +56,13 @@ readable chord like `"cmd+shift+z"`, `"ctrl+c"`, or `"up"`, and `glyph` is an SF
 
 Dictation is driven by the same step vocabulary through `do:` verbs — `dictate`, `send` (inject
 the transcript), `cancel`, `undo` — so a finish ring's center can be, for example,
-`[ {do: send}, {key: return} ]` to send and submit in one motion. Optional
-`voice.muteWhileRecording` / `voice.pauseMediaWhileRecording` quiet other audio while you talk.
+`[ {do: send}, {key: return} ]` to send and submit in one motion. A `bash:` step runs a shell
+command with your dictation in `$HALO_TRANSCRIPT`, so a spoke can pipe what you said to a CLI
+or AI agent (and chain steps via `as:`).
+
+**Let an AI agent configure it for you.** The [`halo-config` skill](skills/) teaches Claude
+Code (or any agent) the full schema — install it, then just ask: *"add a reopen-last-tab spoke
+to my browser wheel,"* or *"make a Slack profile for reactions and replies."*
 
 ## Voice model
 
