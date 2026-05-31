@@ -14,7 +14,8 @@ final class ButtonRecorder {
         MouseHID.shared.start()
         isRecording = true
         token = MouseHID.shared.subscribe { [weak self] button, pressed in
-            guard pressed, let self else { return }
+            // Only middle / side buttons — never left or right (they're needed for clicking).
+            guard pressed, button >= 2, let self else { return }
             self.stop()
             completion(button)
         }

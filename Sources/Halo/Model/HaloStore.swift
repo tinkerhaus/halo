@@ -21,6 +21,7 @@ final class HaloStore {
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         self.fileURL = base.appendingPathComponent("config.yaml")
         self.config = HaloStore.load(from: fileURL) ?? .starter()
+        if config.summonButton < 2 { config.summonButton = 4 }   // left/right are never valid summon buttons
         if !FileManager.default.fileExists(atPath: fileURL.path) { write(config) }   // seed the file
         startWatching()
     }

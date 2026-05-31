@@ -19,7 +19,7 @@ final class Summon {
         startTap()
         MouseHID.shared.start()
         MouseHID.shared.subscribe { [weak self] button, pressed in
-            guard let self, button == self.button() else { return }
+            guard let self, button >= 2, button == self.button() else { return }   // never left/right
             pressed ? self.beginPress() : self.endPress()
         }
     }
@@ -52,7 +52,9 @@ final class Summon {
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             return Unmanaged.passUnretained(event)
         }
-        guard Int(event.getIntegerValueField(.mouseEventButtonNumber)) == button() else {
+        let configured = button()
+        guard configured >= 2,
+              Int(event.getIntegerValueField(.mouseEventButtonNumber)) == configured else {
             return Unmanaged.passUnretained(event)
         }
         switch type {
