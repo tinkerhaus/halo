@@ -83,6 +83,7 @@ final class Voice {
             let recorder = try AVAudioRecorder(url: url, settings: settings)
             recorder.isMeteringEnabled = true
             recorder.record()
+            smoothedLevel = 0
             self.recorder = recorder
             self.recordingURL = url
             self.status = .recording
@@ -91,13 +92,21 @@ final class Voice {
         }
     }
 
-    /// Current mic loudness, 0…1 — for the live waveform. 0 when not recording.
+    private var smoothedLevel: Float = 0
+
+    /// Current mic loudness, 0…1 — for the live waveform. Gated (so room tone
+    /// sits near zero) and envelope-smoothed (fast attack, slow release) so it
+    /// reads like a calm level meter rather than raw noise. 0 when not recording.
     func currentLevel() -> Float {
-        guard let recorder, recorder.isRecording else { return 0 }
+        guard let recorder, recorder.isRecording else { smoothedLevel = 0; return 0 }
         recorder.updateMeters()
-        let db = recorder.averagePower(forChannel: 0)   // ~ -160 … 0 dBFS
-        let floor: Float = -55
-        return min(1, max(0, (db - floor) / -floor))
+        let db = recorder.averagePower(forChannel: 0)        // ~ -160 … 0 dBFS
+        let floor: Float = -52
+        var raw = min(1, max(0, (db - floor) / -floor))
+        raw = max(0, raw - 0.05) / 0.95                      // soft noise gate
+        let factor: Float = raw > smoothedLevel ? 0.45 : 0.10   // attack vs release
+        smoothedLevel += (raw - smoothedLevel) * factor
+        return smoothedLevel
     }
 
     /// Discard the in-progress recording without transcribing.
