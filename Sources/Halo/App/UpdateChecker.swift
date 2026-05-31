@@ -12,7 +12,7 @@ import Observation
 final class UpdateChecker {
     /// Version manifest published alongside the product site (GitHub Pages).
     private static let manifestURL = URL(string: "https://tinkerhaus.github.io/halo/version.json")!
-    private static let downloadURL = "https://github.com/tinkerhaus/halo/releases/latest"
+    private static let downloadURL = "https://tinkerhaus.github.io/halo/"
     private static let skippedBuildKey = "HaloSkippedUpdateBuild"
     private static let lastCheckKey = "HaloLastUpdateCheck"
     private static let autoCheckInterval: TimeInterval = 86_400   // at most once a day, in the background
