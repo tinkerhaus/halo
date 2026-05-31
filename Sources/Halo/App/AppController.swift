@@ -7,6 +7,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private let wheel = WheelController()
     private let summon = Summon()
+    private let voice = Voice()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -19,11 +20,16 @@ final class AppController: NSObject, NSApplicationDelegate {
             return self?.store.halo(forApp: bundleID) ?? HaloConfig.starter().fallback
         }
 
+        wheel.canRecord = { [weak self] in self?.voice.isReady ?? false }
+        wheel.onRecordStart = { [weak self] in self?.voice.startRecording() }
+        wheel.onRecordStop = { [weak self] in self?.voice.stopAndInject() }
+
         summon.button = { [weak self] in self?.store.summonButton ?? 4 }
         summon.onPress = { [weak self] in self?.wheel.present() }
         summon.onRelease = { [weak self] in self?.wheel.release() }
         summon.start()
 
+        voice.prepare()                 // load the model (downloads on first run)
         requestAccessibilityIfNeeded()
     }
 

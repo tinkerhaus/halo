@@ -11,8 +11,10 @@ import SwiftUI
 final class WheelController {
     /// Supplies the halo to show (per-app profile lookup happens here).
     var haloProvider: () -> Halo = { Halo() }
-    /// Released at the root center → dictate. (Voice lands later.)
-    var onDictate: (() -> Void)?
+    /// Voice hooks — hold at the root center to dictate.
+    var canRecord: () -> Bool = { false }
+    var onRecordStart: () -> Void = {}
+    var onRecordStop: () -> Void = {}
 
     private let model = WheelModel()
     private var panel: NSPanel?
@@ -25,7 +27,7 @@ final class WheelController {
     private var stack: [Halo] = []
     private var current: Halo { stack.last ?? Halo() }
 
-    private enum Dwell: Equatable { case none, well(Int), center }
+    private enum Dwell: Equatable { case none, well(Int), center, recordCenter }
     private var dwell: Dwell = .none
     private var dwellFrames = 0
     private let dwellNeeded = 18    // ~0.3s at 60 Hz
@@ -47,23 +49,25 @@ final class WheelController {
         startTracking()
     }
 
-    /// Summon button released — fire the highlighted spoke, dictate, or cancel.
+    /// Summon button released — finish dictation, fire the highlighted spoke, or cancel.
     func release() {
-        let wedge = model.inWedge
-        let atRoot = stack.count == 1
+        if model.recording {
+            onRecordStop()          // transcribe + inject
+            dismiss()
+            return
+        }
         let spoke = model.highlighted.flatMap { current.spokes.indices.contains($0) ? current.spokes[$0] : nil }
         dismiss()
-        if let spoke {
-            if case .performs(let action) = spoke.content { ActionRunner.run(action) }
-            // Releasing on a well does nothing — you expand it by dwelling.
-        } else if !wedge && atRoot {
-            onDictate?()
+        if let spoke, case .performs(let action) = spoke.content {
+            ActionRunner.run(action)   // a well does nothing on release — expand it by dwelling
         }
+        // A quick release at center (no recording) just cancels.
     }
 
     func dismiss() {
         tracker?.invalidate(); tracker = nil      // freeze selection during the collapse
         dwell = .none; dwellFrames = 0
+        model.recording = false; model.modelLoading = false
         model.collapseID += 1                      // retract spokes into the hub
 
         hideToken += 1
@@ -87,6 +91,8 @@ final class WheelController {
         model.depth = stack.count - 1
         model.highlighted = nil
         model.inWedge = false
+        model.recording = false
+        model.modelLoading = false
         model.revealID += 1     // replay the bloom-in for this level
     }
 
@@ -114,15 +120,26 @@ final class WheelController {
 
     private func track() {
         guard let panel else { return }
+        if model.recording { return }              // hold-to-talk: ignore movement once recording
         let mouse = NSEvent.mouseLocation
         let dx = mouse.x - panel.frame.midX
         let dy = mouse.y - panel.frame.midY        // screen coords: y points up
 
-        guard hypot(dx, dy) >= deadZone else {
+        guard hypot(dx, dy) >= deadZone else {     // in the center deadzone
             model.highlighted = nil; model.inWedge = false
-            advanceDwell(stack.count > 1 ? .center : .none)   // rest at center → back out
+            if stack.count > 1 {
+                model.modelLoading = false
+                advanceDwell(.center)              // sub-ring: rest to back out
+            } else if canRecord() {
+                model.modelLoading = false
+                advanceDwell(.recordCenter)        // root: dwell to start dictating
+            } else {
+                model.modelLoading = true          // model still downloading/loading
+                advanceDwell(.none)
+            }
             return
         }
+        model.modelLoading = false
         // A spoke at view angle θ (y down) sits in screen space at (cos θ, −sin θ),
         // so the cursor's view angle is atan2(−dy, dx).
         let cursor = Angle.radians(atan2(-dy, dx))
@@ -142,9 +159,10 @@ final class WheelController {
         guard dwellFrames >= dwellNeeded else { return }
         dwell = .none; dwellFrames = 0
         switch target {
-        case .well(let i): expand(i)
-        case .center:      pop()
-        case .none:        break
+        case .well(let i):   expand(i)
+        case .center:        pop()
+        case .recordCenter:  model.recording = true; onRecordStart()
+        case .none:          break
         }
     }
 

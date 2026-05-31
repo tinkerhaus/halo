@@ -26,4 +26,8 @@ final class WheelModel {
     var revealID = 0
     /// Bumped when the wheel is dismissed, so the view plays the collapse-out.
     var collapseID = 0
+    /// Hold-to-talk at the center is active (mic recording).
+    var recording = false
+    /// Center held but the voice model isn't ready yet.
+    var modelLoading = false
 }

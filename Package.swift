@@ -8,12 +8,16 @@ let package = Package(
         .executable(name: "Halo", targets: ["Halo"])
     ],
     dependencies: [
-        .package(url: "https://github.com/jpsim/Yams", from: "5.1.0")
+        .package(url: "https://github.com/jpsim/Yams", from: "5.1.0"),
+        .package(url: "https://github.com/argmaxinc/WhisperKit", from: "0.9.0")
     ],
     targets: [
         .executableTarget(
             name: "Halo",
-            dependencies: [.product(name: "Yams", package: "Yams")],
+            dependencies: [
+                .product(name: "Yams", package: "Yams"),
+                .product(name: "WhisperKit", package: "WhisperKit")
+            ],
             path: "Sources/Halo",
             resources: [.process("Resources")]
         )

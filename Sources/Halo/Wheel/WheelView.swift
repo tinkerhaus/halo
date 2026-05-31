@@ -27,11 +27,13 @@ struct WheelView: View {
                 .opacity(Double(min(1, reveal * 1.6)))
                 .position(centerPoint)
 
-            ForEach(model.spokes) { spoke in
-                spokeView(spoke)
-                    .scaleEffect(reveal)
-                    .opacity(Double(reveal))
-                    .position(position(for: spoke))
+            if !model.recording {
+                ForEach(model.spokes) { spoke in
+                    spokeView(spoke)
+                        .scaleEffect(reveal)
+                        .opacity(Double(reveal))
+                        .position(position(for: spoke))
+                }
             }
         }
         .frame(width: canvas, height: canvas)
@@ -64,7 +66,14 @@ struct WheelView: View {
     private var hubView: some View {
         let h = model.highlighted
         return VStack(spacing: 4) {
-            if let h, model.spokes.indices.contains(h) {
+            if model.recording {
+                Image(systemName: "waveform").font(.system(size: 21, weight: .semibold))
+                    .foregroundStyle(Color(red: 1.0, green: 0.35, blue: 0.45))
+                Text("Recording…").font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.7))
+            } else if model.modelLoading {
+                Image(systemName: "arrow.down.circle.dotted").font(.system(size: 20, weight: .semibold))
+                Text("Loading model…").font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.6))
+            } else if let h, model.spokes.indices.contains(h) {
                 Image(systemName: model.spokes[h].glyph).font(.system(size: 21, weight: .semibold))
                 Text(model.spokes[h].label).font(.system(size: 13, weight: .bold, design: .rounded))
             } else if model.inWedge {
@@ -75,7 +84,7 @@ struct WheelView: View {
                 Text("Hold to go back").font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.6))
             } else {
                 Image(systemName: "mic.fill").font(.system(size: 20, weight: .semibold))
-                Text("Release to dictate").font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.6))
+                Text("Hold to dictate").font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.6))
             }
         }
         .foregroundStyle(.white)
