@@ -16,6 +16,7 @@ struct MenuBarMenu: View {
         }
         Divider()
         Button("Open Halo") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
+        Button("Reveal Config in Finder") { NSWorkspace.shared.activateFileViewerSelecting([store.configURL]) }
         Button("Reset Config to Defaults…") { confirmReset() }
         Divider()
         Button("Quit Halo") { NSApp.terminate(nil) }

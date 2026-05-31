@@ -23,6 +23,9 @@ struct WheelsEditor: View {
     @State private var keyRecorder = KeystrokeRecorder()
     @State private var recordingRef: StepRef?
     @State private var pendingConvert: PendingConvert?
+    @State private var pendingProfileDelete: UUID?
+    @State private var pendingSpokeDelete: Int?
+    @State private var pendingDiscard = false
     @State private var newBundleID = ""
 
     var body: some View {
@@ -56,10 +59,53 @@ struct WheelsEditor: View {
                  ? "The keystroke / steps on this spoke will be replaced by an empty sub-ring (well)."
                  : "The nested spokes inside this well will be removed.")
         }
+        .confirmationDialog("Delete this profile?", isPresented: profileDeleteShown, titleVisibility: .visible) {
+            Button("Delete Profile", role: .destructive) {
+                if let id = pendingProfileDelete { deleteProfile(id) }
+                pendingProfileDelete = nil
+            }
+            Button("Cancel", role: .cancel) { pendingProfileDelete = nil }
+        } message: {
+            Text("This removes the profile and its wheel. It's final once you Save.")
+        }
+        .confirmationDialog("Delete this well?", isPresented: spokeDeleteShown, titleVisibility: .visible) {
+            Button("Delete Well", role: .destructive) {
+                if let i = pendingSpokeDelete { deleteSpoke(i) }
+                pendingSpokeDelete = nil
+            }
+            Button("Cancel", role: .cancel) { pendingSpokeDelete = nil }
+        } message: {
+            Text("This removes the well and every spoke nested inside it.")
+        }
+        .confirmationDialog("Discard unsaved changes?", isPresented: $pendingDiscard, titleVisibility: .visible) {
+            Button("Discard Changes", role: .destructive) {
+                store.discardDraft()
+                target = .default; tab = .wheel; wellPath = []; selection = .empty
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your unsaved edits will revert to the last saved version.")
+        }
     }
 
     private var pendingConvertShown: Binding<Bool> {
         Binding(get: { pendingConvert != nil }, set: { if !$0 { pendingConvert = nil } })
+    }
+    private var profileDeleteShown: Binding<Bool> {
+        Binding(get: { pendingProfileDelete != nil }, set: { if !$0 { pendingProfileDelete = nil } })
+    }
+    private var spokeDeleteShown: Binding<Bool> {
+        Binding(get: { pendingSpokeDelete != nil }, set: { if !$0 { pendingSpokeDelete = nil } })
+    }
+
+    /// Confirm before deleting a non-empty well (it takes its whole sub-ring with it);
+    /// plain spokes delete straight away.
+    private func requestDeleteSpoke(_ i: Int) {
+        if case .opens(let h)? = currentHalo.spokes[safe: i]?.content, !h.spokes.isEmpty {
+            pendingSpokeDelete = i
+        } else {
+            deleteSpoke(i)
+        }
     }
 
     private var verticalRule: some View {
@@ -73,11 +119,8 @@ struct WheelsEditor: View {
             Text("Wheels").font(.system(size: 15, weight: .semibold))
             dirtyBadge
             Spacer()
-            Button("Discard") {
-                store.discardDraft()
-                target = .default; tab = .wheel; wellPath = []; selection = .empty
-            }
-            .disabled(!store.hasUnsavedChanges)
+            Button("Discard") { pendingDiscard = true }
+                .disabled(!store.hasUnsavedChanges)
             Button { store.commitDraft() } label: {
                 Label("Save", systemImage: "tray.and.arrow.down.fill")
             }
@@ -114,15 +157,30 @@ struct WheelsEditor: View {
                 targetRow(p.name.isEmpty ? "Untitled" : p.name, icon: "square.stack.3d.up.fill",
                           subtitle: appCount(p.appBundleIDs.count), t: .profile(p.id))
             }
-            Button { addProfile() } label: {
+            Menu {
+                Button("Blank profile") {
+                    addProfile(name: "New Profile",
+                               halo: Halo(arc: Arc(spanDegrees: 200, centerDegrees: -90), radius: 124, spokes: []),
+                               finish: nil)
+                }
+                Section("Start from a copy of") {
+                    Button("Default") { addProfile(name: "Default copy", halo: store.draft.defaultHalo, finish: nil) }
+                    ForEach(store.draft.profiles) { p in
+                        Button(p.name.isEmpty ? "Untitled" : p.name) {
+                            addProfile(name: "\(p.name.isEmpty ? "Profile" : p.name) copy", halo: p.halo, finish: p.finish)
+                        }
+                    }
+                }
+            } label: {
                 HStack(spacing: 9) {
                     Image(systemName: "plus").font(.system(size: 11)).frame(width: 18)
                     Text("Add profile…").font(.system(size: 13))
                     Spacer()
+                    Image(systemName: "chevron.down").font(.system(size: 9)).foregroundStyle(.tertiary)
                 }
                 .padding(.horizontal, 9).padding(.vertical, 7).contentShape(Rectangle())
             }
-            .buttonStyle(.plain).foregroundStyle(.secondary)
+            .menuStyle(.borderlessButton).foregroundStyle(.secondary)
 
             Spacer()
             railHeader("Summon")
@@ -239,16 +297,19 @@ struct WheelsEditor: View {
     /// The add-spoke affordance — deliberately *off* the ring, below the wheel. At
     /// the cap it turns into a notice (nest a well to go further).
     @ViewBuilder private var addSpokeControl: some View {
-        if currentHalo.spokes.count < Halo.maxSpokes {
+        if currentHalo.spokes.count < effectiveMaxSpokes {
             Button { addSpoke() } label: { Label("Add spoke", systemImage: "plus") }
                 .buttonStyle(.borderedProminent).controlSize(.large)
         } else {
-            Label("Max \(Halo.maxSpokes) spokes — nest a well to add more", systemImage: "exclamationmark.circle")
+            Label("Max \(effectiveMaxSpokes) spokes — nest a well to add more", systemImage: "exclamationmark.circle")
                 .font(.system(size: 11, weight: .medium)).foregroundStyle(.orange)
                 .padding(.horizontal, 12).padding(.vertical, 7)
                 .background(Capsule().fill(.orange.opacity(0.12)))
         }
     }
+
+    /// A well reserves one slot for the auto Back spoke, so it holds one fewer.
+    private var effectiveMaxSpokes: Int { wellPath.isEmpty ? Halo.maxSpokes : Halo.maxSpokes - 1 }
 
     private func drillInto(_ index: Int) {
         guard currentHalo.spokes.indices.contains(index), currentHalo.spokes[index].isWell else { return }
@@ -258,10 +319,8 @@ struct WheelsEditor: View {
 
     /// Icon + label for the hub, matching the runtime's center semantics.
     private var centerHint: (icon: String, label: String) {
-        if currentHalo.center != nil { return ("smallcircle.filled.circle", "center action") }
         if tab == .finish { return ("paperplane.fill", "Release to send") }
-        if !wellPath.isEmpty { return ("arrow.uturn.backward", "Hold to go back") }
-        return ("mic.fill", "Release to dictate")
+        return ("mic.fill", "Release to dictate")     // center always dictates, every depth
     }
 
     // MARK: - Inspector
@@ -289,14 +348,19 @@ struct WheelsEditor: View {
             if isInheritedFinish {
                 inheritedFinishCard
             } else {
-                labeled("Arc span") { sliderRow(value: spanBinding, range: 0...Double(Arc.maxSpanDegrees), suffix: "°") }
-                labeled("Arc center") { sliderRow(value: centerBinding, range: -180...180, suffix: "°") }
-                labeled("Radius") { sliderRow(value: radiusBinding, range: 80...210, suffix: "") }
+                if wellPath.isEmpty {
+                    labeled("Arc span") { sliderRow(value: spanBinding, range: 0...Double(Arc.maxSpanDegrees), suffix: "°") }
+                    labeled("Arc center") { sliderRow(value: centerBinding, range: -180...180, suffix: "°") }
+                    labeled("Radius") { sliderRow(value: radiusBinding, range: 80...210, suffix: "") }
+                } else {
+                    Text("This well's sub-ring reuses the parent wheel's shape — its spoke becomes ⟵ Back here — so it has no separate arc or radius. The center always dictates.")
+                        .font(.system(size: 11)).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+                }
 
                 HStack {
                     Text("Spokes").font(.system(size: 12)).foregroundStyle(.secondary)
                     Spacer()
-                    Text("\(currentHalo.spokes.count) / \(Halo.maxSpokes)")
+                    Text("\(currentHalo.spokes.count) / \(effectiveMaxSpokes)")
                         .font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary)
                 }
 
@@ -344,7 +408,7 @@ struct WheelsEditor: View {
                     .font(.system(size: 13)).padding(7).background(fieldBG)
             }
             appsEditor(id, store.draft.profiles.first { $0.id == id }?.appBundleIDs ?? [])
-            Button(role: .destructive) { deleteProfile(id) } label: {
+            Button(role: .destructive) { pendingProfileDelete = id } label: {
                 Label("Delete profile", systemImage: "trash")
             }.controlSize(.small)
         }
@@ -421,7 +485,7 @@ struct WheelsEditor: View {
                     actionEditor(i, action)
                 }
 
-                Button(role: .destructive) { deleteSpoke(i) } label: {
+                Button(role: .destructive) { requestDeleteSpoke(i) } label: {
                     Label("Delete spoke", systemImage: "trash")
                 }.controlSize(.small)
             }
@@ -439,10 +503,8 @@ struct WheelsEditor: View {
     }
 
     private var centerExplanation: String {
-        if currentHalo.center != nil { return "This hub fires a custom step sequence on release. Editing it lands with the action editor next." }
-        if tab == .finish { return "By default a finish ring sends the dictated text when you release at center." }
-        if !wellPath.isEmpty { return "In a well, resting at center backs out to the parent ring." }
-        return "By default the root wheel's center starts a dictation session."
+        if tab == .finish { return "A finish ring sends the dictated text when you release at center." }
+        return "Releasing at center always starts a dictation session — on the wheel and inside every well. To leave a well, dwell on its ⟵ Back spoke."
     }
 
     // MARK: - Inspector building blocks
@@ -741,7 +803,7 @@ struct WheelsEditor: View {
     private func setCenter(_ v: Int) { mutateHalo { $0.arc.centerDegrees = v } }
 
     private func addSpoke() {
-        guard currentHalo.spokes.count < Halo.maxSpokes else { return }
+        guard currentHalo.spokes.count < effectiveMaxSpokes else { return }
         let newIndex = currentHalo.spokes.count
         mutateHalo { $0.spokes.append(Spoke(label: "New", glyph: "circle",
                                             content: .performs(Action([.key(code: Key.enter, modifiers: [])])))) }
@@ -754,9 +816,10 @@ struct WheelsEditor: View {
 
     // MARK: - Profiles, apps & finish rings
 
-    private func addProfile() {
-        let new = Profile(name: "New Profile", appBundleIDs: [],
-                          halo: Halo(arc: Arc(spanDegrees: 200, centerDegrees: -90), radius: 124, spokes: []))
+    /// Append a profile (blank, or copied from Default / another profile). The copy
+    /// starts with **no apps** so it won't fight the source for the same frontmost app.
+    private func addProfile(name: String, halo: Halo, finish: Halo?) {
+        let new = Profile(name: name, appBundleIDs: [], halo: halo, finish: finish)
         var cfg = store.draft
         cfg.profiles.append(new)
         store.draft = cfg

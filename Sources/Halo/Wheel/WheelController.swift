@@ -8,7 +8,10 @@ import SwiftUI
 /// Navigation into wells is dwell-based; release is terminal. What release does:
 ///   • on a spoke   → fire its action
 ///   • in the wedge → cancel (discard a dictation if one is active, else dismiss)
-///   • at center    → the halo's `center` action (root default: dictate)
+///   • at center    → dictate (at *any* depth); a finish ring's center sends instead
+///
+/// A well opens onto the *parent's* ring with a **Back** spoke sitting where the
+/// well was — so the same place takes you in and back out (dwell Back to return).
 ///
 /// Dictation: release-at-center starts a hands-free session (the hub becomes the
 /// live recording UI). Pressing summon again presents the *finish* halo — release
@@ -31,13 +34,17 @@ final class WheelController {
     private let canvas: CGFloat = 380
     private let deadZone: CGFloat = 34
 
-    private var stack: [Halo] = []
-    private var current: Halo { stack.last ?? Halo() }
+    /// A displayed ring plus which of its spokes is the Back button (nil at the root).
+    private struct Level { let halo: Halo; let backIndex: Int? }
+    private var stack: [Level] = []
+    private var current: Halo { stack.last?.halo ?? Halo() }
+    private var currentBackIndex: Int? { stack.last?.backIndex }
 
-    private enum Dwell: Equatable { case none, well(Int), center }
+    private enum Dwell: Equatable { case none, well(Int), back }
     private var dwell: Dwell = .none
     private var dwellFrames = 0
     private let dwellNeeded = 18    // ~0.3s at 60 Hz
+    private var backArmed = false   // suppress an instant bounce-back right after a well opens
 
     private var hideToken = 0
     private var lastHighlight: Int?      // for the soft select tick
@@ -51,8 +58,9 @@ final class WheelController {
     func present() {
         ensurePanel()
         hideToken += 1
-        stack = [haloProvider()]
+        stack = [Level(halo: haloProvider(), backIndex: nil)]
         dwell = .none; dwellFrames = 0
+        backArmed = true
         lastHighlight = nil
         render()
         positionAtCursor()
@@ -62,22 +70,23 @@ final class WheelController {
     }
 
     func release() {
-        let spoke = model.highlighted.flatMap { current.spokes.indices.contains($0) ? current.spokes[$0] : nil }
-        if let spoke {
-            if case .performs(let action) = spoke.content { fire(action) } else { dismiss() }
+        if let h = model.highlighted {
+            if h == currentBackIndex { dismiss(); return }       // released on Back → just close
+            let spoke = current.spokes.indices.contains(h) ? current.spokes[h] : nil
+            if case .performs(let action)? = spoke?.content { fire(action) } else { dismiss() }
             return
         }
         if model.inWedge {
             if hasSession() { fire(Action([.verb(.cancel)])) } else { Sounds.shared.play(.cancel); dismiss() }
             return
         }
-        // Center.
+        // Center — always dictates at any depth; a finish ring keeps its configured center (send).
         if let action = current.center {
             fire(action)
-        } else if stack.count == 1, canRecord() {
-            fire(Action([.verb(.dictate)]))     // root default
+        } else if canRecord() {
+            fire(Action([.verb(.dictate)]))
         } else {
-            dismiss()                            // sub-ring center, or model not ready
+            dismiss()
         }
     }
 
@@ -187,13 +196,33 @@ final class WheelController {
     private func expand(_ index: Int) {
         guard current.spokes.indices.contains(index),
               case .opens(let child) = current.spokes[index].content else { return }
-        stack.append(child)
+        let built = subRing(child: child, parent: current, wellIndex: index)
+        backArmed = false                       // require leaving Back once before it can fire
+        stack.append(Level(halo: built.halo, backIndex: built.backIndex))
         render()
+    }
+
+    /// The ring shown when a well opens: the child's spokes plus a Back spoke, laid
+    /// out on the *parent's* arc so Back sits where the well spoke was — enter and
+    /// exit are the same place.
+    private func subRing(child: Halo, parent: Halo, wellIndex: Int) -> (halo: Halo, backIndex: Int) {
+        let parentAngles = parent.arc.placements(count: parent.spokes.count)
+        let wellAngle = parentAngles.indices.contains(wellIndex) ? parentAngles[wellIndex] : parent.arc.center
+        var spokes = Array(child.spokes.prefix(Halo.maxSpokes - 1))   // leave a slot for Back
+        let back = Spoke(label: "Back", glyph: "chevron.backward", content: .performs(Action([])))
+        let angles = parent.arc.placements(count: spokes.count + 1)
+        var backIndex = 0, best = Double.greatestFiniteMagnitude
+        for (i, a) in angles.enumerated() where abs(Arc.delta(a, wellAngle)) < best {
+            best = abs(Arc.delta(a, wellAngle)); backIndex = i
+        }
+        spokes.insert(back, at: backIndex)
+        return (Halo(arc: parent.arc, radius: parent.radius, spokes: spokes), backIndex)
     }
 
     private func pop() {
         guard stack.count > 1 else { return }
         stack.removeLast()
+        backArmed = true
         render()
     }
 
@@ -213,26 +242,26 @@ final class WheelController {
         let dx = mouse.x - panel.frame.midX
         let dy = mouse.y - panel.frame.midY
 
-        guard hypot(dx, dy) >= deadZone else {  // center deadzone
+        guard hypot(dx, dy) >= deadZone else {  // center deadzone — always dictates on release
             model.highlighted = nil; model.inWedge = false
-            if stack.count > 1 {
-                model.modelLoading = false
-                advanceDwell(.center)                          // sub-ring: rest to back out
-            } else {
-                // Root center fires dictate on release; show "loading" only while
-                // that default applies and the model isn't ready yet.
-                model.modelLoading = current.center == nil && !canRecord()
-                advanceDwell(.none)
-            }
+            backArmed = true                               // cursor is off the Back spoke
+            model.modelLoading = current.center == nil && !canRecord()
+            advanceDwell(.none)
             return
         }
         model.modelLoading = false
         let cursor = Angle.radians(atan2(-dy, dx))
         if let sel = current.arc.selection(forCursor: cursor, count: current.spokes.count) {
             model.highlighted = sel; model.inWedge = false
-            advanceDwell(current.spokes[sel].isWell ? .well(sel) : .none)
+            if sel == currentBackIndex {
+                advanceDwell(backArmed ? .back : .none)    // dwell to go back, once armed
+            } else {
+                backArmed = true
+                advanceDwell(current.spokes[sel].isWell ? .well(sel) : .none)
+            }
         } else {
             model.highlighted = nil; model.inWedge = true
+            backArmed = true
             advanceDwell(.none)
         }
     }
@@ -251,7 +280,7 @@ final class WheelController {
         dwell = .none; dwellFrames = 0
         switch target {
         case .well(let i):   expand(i)
-        case .center:        pop()
+        case .back:          pop()
         case .none:          break
         }
     }

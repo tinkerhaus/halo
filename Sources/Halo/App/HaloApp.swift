@@ -23,7 +23,7 @@ struct HaloApp: App {
                 .environment(controller.store)
                 .environment(controller.voice)
                 .environment(controller.permissions)
-                .frame(minWidth: 820, minHeight: 600)
+                .frame(minWidth: 900, minHeight: 640)
         }
         .windowResizability(.contentMinSize)
 
