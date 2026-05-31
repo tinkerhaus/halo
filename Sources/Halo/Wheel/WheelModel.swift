@@ -20,4 +20,6 @@ final class WheelModel {
     var highlighted: Int? = nil
     /// Cursor is in the empty wedge — releasing cancels.
     var inWedge = false
+    /// Depth in the well stack (0 == root). Drives the center hint.
+    var depth = 0
 }

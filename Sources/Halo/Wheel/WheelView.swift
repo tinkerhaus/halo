@@ -40,6 +40,9 @@ struct WheelView: View {
             } else if model.inWedge {
                 Image(systemName: "xmark").font(.system(size: 20, weight: .semibold))
                 Text("Release to cancel").font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.6))
+            } else if model.depth > 0 {
+                Image(systemName: "arrow.uturn.backward").font(.system(size: 20, weight: .semibold))
+                Text("Hold to go back").font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.6))
             } else {
                 Image(systemName: "mic.fill").font(.system(size: 20, weight: .semibold))
                 Text("Release to dictate").font(.system(size: 9, weight: .medium)).foregroundStyle(.white.opacity(0.6))

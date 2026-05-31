@@ -4,10 +4,14 @@ import SwiftUI
 /// Presents the wheel over whatever app you're in and turns cursor motion into a
 /// selection. The panel ignores mouse events — selection is read purely from the
 /// cursor's angle, so the underlying app keeps focus and receives the keystroke.
+///
+/// Navigation into wells is *dwell-based*: hover a well to expand into it, rest
+/// at the center to back out. Release is always terminal — it fires the
+/// highlighted spoke, dictates (root center), or cancels (empty wedge).
 final class WheelController {
     /// Supplies the halo to show (per-app profile lookup happens here).
     var haloProvider: () -> Halo = { Halo() }
-    /// Released at the center → dictate. (Voice lands later.)
+    /// Released at the root center → dictate. (Voice lands later.)
     var onDictate: (() -> Void)?
 
     private let model = WheelModel()
@@ -16,47 +20,76 @@ final class WheelController {
 
     private let canvas: CGFloat = 380
     private let deadZone: CGFloat = 34
-    private var halo = Halo()
+
+    /// Wells we've descended into; `last` is on screen.
+    private var stack: [Halo] = []
+    private var current: Halo { stack.last ?? Halo() }
+
+    private enum Dwell: Equatable { case none, well(Int), center }
+    private var dwell: Dwell = .none
+    private var dwellFrames = 0
+    private let dwellNeeded = 18    // ~0.3s at 60 Hz
 
     var isShowing: Bool { panel?.isVisible ?? false }
 
+    // MARK: - Lifecycle
+
     func present() {
         ensurePanel()
-        halo = haloProvider()
-        model.spokes = halo.spokes.enumerated().map { i, s in
-            WheelSpoke(id: i, label: s.label, glyph: s.glyph, isWell: s.isWell)
-        }
-        model.angles = halo.arc.placements(count: halo.spokes.count)
-        model.radius = CGFloat(halo.radius)
-        model.highlighted = nil
-        model.inWedge = false
+        stack = [haloProvider()]
+        dwell = .none; dwellFrames = 0
+        render()
         positionAtCursor()
         panel?.orderFrontRegardless()
         startTracking()
     }
 
-    /// Called when the summon button is released — fire the selection, or dictate
-    /// / cancel.
+    /// Summon button released — fire the highlighted spoke, dictate, or cancel.
     func release() {
-        let selection = model.highlighted
         let wedge = model.inWedge
+        let atRoot = stack.count == 1
+        let spoke = model.highlighted.flatMap { current.spokes.indices.contains($0) ? current.spokes[$0] : nil }
         dismiss()
-
-        if let i = selection, halo.spokes.indices.contains(i) {
-            switch halo.spokes[i].content {
-            case .performs(let action): ActionRunner.run(action)
-            case .opens:                break   // wells expand on dwell (lands later)
-            }
-        } else if !wedge {
-            onDictate?()                          // released at center
+        if let spoke {
+            if case .performs(let action) = spoke.content { ActionRunner.run(action) }
+            // Releasing on a well does nothing — you expand it by dwelling.
+        } else if !wedge && atRoot {
+            onDictate?()
         }
     }
 
     func dismiss() {
         tracker?.invalidate(); tracker = nil
         panel?.orderOut(nil)
+        stack = []
+        dwell = .none; dwellFrames = 0
+        model.highlighted = nil; model.inWedge = false
+    }
+
+    // MARK: - Levels
+
+    private func render() {
+        model.spokes = current.spokes.enumerated().map { i, s in
+            WheelSpoke(id: i, label: s.label, glyph: s.glyph, isWell: s.isWell)
+        }
+        model.angles = current.arc.placements(count: current.spokes.count)
+        model.radius = CGFloat(current.radius)
+        model.depth = stack.count - 1
         model.highlighted = nil
         model.inWedge = false
+    }
+
+    private func expand(_ index: Int) {
+        guard current.spokes.indices.contains(index),
+              case .opens(let child) = current.spokes[index].content else { return }
+        stack.append(child)
+        render()
+    }
+
+    private func pop() {
+        guard stack.count > 1 else { return }
+        stack.removeLast()
+        render()
     }
 
     // MARK: - Tracking
@@ -73,16 +106,34 @@ final class WheelController {
         let mouse = NSEvent.mouseLocation
         let dx = mouse.x - panel.frame.midX
         let dy = mouse.y - panel.frame.midY        // screen coords: y points up
+
         guard hypot(dx, dy) >= deadZone else {
-            model.highlighted = nil; model.inWedge = false; return   // center → dictate
+            model.highlighted = nil; model.inWedge = false
+            advanceDwell(stack.count > 1 ? .center : .none)   // rest at center → back out
+            return
         }
         // A spoke at view angle θ (y down) sits in screen space at (cos θ, −sin θ),
         // so the cursor's view angle is atan2(−dy, dx).
         let cursor = Angle.radians(atan2(-dy, dx))
-        if let sel = halo.arc.selection(forCursor: cursor, count: halo.spokes.count) {
+        if let sel = current.arc.selection(forCursor: cursor, count: current.spokes.count) {
             model.highlighted = sel; model.inWedge = false
+            advanceDwell(current.spokes[sel].isWell ? .well(sel) : .none)
         } else {
             model.highlighted = nil; model.inWedge = true
+            advanceDwell(.none)
+        }
+    }
+
+    /// Accumulate hover time on a navigable target; act when it crosses the dwell.
+    private func advanceDwell(_ target: Dwell) {
+        guard target != .none else { dwell = .none; dwellFrames = 0; return }
+        if dwell == target { dwellFrames += 1 } else { dwell = target; dwellFrames = 1 }
+        guard dwellFrames >= dwellNeeded else { return }
+        dwell = .none; dwellFrames = 0
+        switch target {
+        case .well(let i): expand(i)
+        case .center:      pop()
+        case .none:        break
         }
     }
 
@@ -92,7 +143,7 @@ final class WheelController {
         guard let panel else { return }
         let mouse = NSEvent.mouseLocation
         var center = mouse
-        let reach = CGFloat(halo.radius) + 40
+        let reach = CGFloat(current.radius) + 40
         let margin: CGFloat = 12
         if let screen = NSScreen.screens.first(where: { $0.frame.contains(mouse) }) ?? NSScreen.main {
             let vf = screen.visibleFrame
