@@ -101,22 +101,29 @@ launch from the Hugging Face repo `tinkerhaus/whisperkit-coreml`
 (variant `openai_whisper-large-v3-v20240930_turbo`), so the `.app` stays small. Load
 status (download %, ready, recording, transcribing) shows in the menu-bar menu.
 
-## Auto-updates (Sparkle)
+## Auto-updates (Sparkle) — notify-only
 
-Updates ship via **Sparkle**, deliberately **without notarization**: Sparkle verifies
-every update with its own **Ed25519** key (`SUPublicEDKey` in Info.plist), independent
-of Apple Gatekeeper. The appcast feed is `docs/appcast.xml`, served from GitHub Pages
-at `SUFeedURL` (`https://tinkerhaus.github.io/halo/appcast.xml`). `AppController` owns
-an `Updater` (wrapping `SPUStandardUpdaterController`); **Check for Updates…** is in
-both the menu-bar menu and the app menu. First install still needs the one-time
-Gatekeeper bypass; Sparkle-applied updates generally don't re-prompt.
+Halo embeds **Sparkle** to *notify* about new versions, but it does **not** install
+them. A self-signed / un-notarized build has **no Team ID**, so macOS **App Management**
+denies the self-update exemption and blocks Sparkle from replacing the bundle (the
+install fails with *"…was prevented from modifying the applications"*). So updates are
+**informational**: each `docs/appcast.xml` item has **no `<enclosure>`**, Sparkle shows
+an update notice with a **Learn More** link to the releases page, and the user downloads
++ installs the new dmg manually. `SUAutomaticallyUpdate` is `false` so Sparkle never
+attempts the in-place install. (This is the real cost of the $0/self-signed route —
+see the [[halo-release]] memory. The download + **Ed25519** machinery, `SUPublicEDKey`
+and the keychain private key, is wired but unused; it's ready for the day Halo is
+notarized and can switch to true in-place updates.)
 
-Cutting a release: bump `VERSION`/`BUILD` in `package.sh`, build + make the dmg, upload
-it as a GitHub release asset, then add an `<item>` to `docs/appcast.xml` with the new
-`sparkle:version` (= `CFBundleVersion`), `sparkle:shortVersionString`, `length` (bytes),
-and `sparkle:edSignature` from `sign_update <dmg>` — sign the **exact published bytes**.
-The Sparkle private key lives in the login keychain (`generate_keys -p` prints the
-public key). Push to `main`; Pages republishes the feed.
+`AppController` owns an `Updater` (wrapping `SPUStandardUpdaterController`); **Check for
+Updates…** is in both the menu-bar menu and the app menu. The feed is `docs/appcast.xml`
+on GitHub Pages (`SUFeedURL`); checks are automatic (daily) but never auto-install.
+
+Cutting a release: bump `VERSION`/`BUILD` in `package.sh` (both env-overridable, e.g.
+`VERSION=0.1.1 BUILD=2 ./package.sh`), build + dmg, upload it as a GitHub release, then
+add an `<item>` to `docs/appcast.xml` with the new `sparkle:version` (= `CFBundleVersion`),
+`sparkle:shortVersionString`, and a `<link>` to the release — **no** enclosure, length,
+or signature. Push to `main`; Pages republishes the feed.
 
 ## Conventions
 

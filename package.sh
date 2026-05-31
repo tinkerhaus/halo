@@ -3,8 +3,8 @@ set -euo pipefail
 
 APP_NAME="Halo"
 BUNDLE_ID="com.halo.app"
-VERSION="0.1.0"
-BUILD="1"
+VERSION="${VERSION:-0.1.0}"   # override per release: VERSION=0.1.1 ./package.sh
+BUILD="${BUILD:-1}"           # CFBundleVersion; Sparkle compares this. BUILD=2 ./package.sh
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 APP="$ROOT/build/$APP_NAME.app"
@@ -56,6 +56,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>SUPublicEDKey</key>                  <string>m1galZQk0Cqt7fguZtkJdezgtIzbrfSP30J12zwUOTA=</string>
     <key>SUEnableAutomaticChecks</key>        <true/>
     <key>SUScheduledCheckInterval</key>       <integer>86400</integer>
+    <!-- Notify-only: self-signed builds can't auto-install (macOS App Management),
+         so Sparkle shows an update notice + download link, never installs in place. -->
+    <key>SUAutomaticallyUpdate</key>          <false/>
 </dict>
 </plist>
 PLIST
