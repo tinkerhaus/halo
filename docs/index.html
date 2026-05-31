@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Halo — a radial command wheel for your Mac</title>
+<meta name="description" content="Halo is a mouse-summoned radial command wheel for macOS with on-device voice dictation at its center. Flick to a spoke to fire a keystroke, macro, text, or shell command — release at the center to dictate.">
+<meta property="og:title" content="Halo — a radial command wheel for your Mac">
+<meta property="og:description" content="Hold a mouse button anywhere → a ring of commands blooms at your cursor → flick and release. On-device voice dictation at the center.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='38' fill='none' stroke='%238c80fa' stroke-width='10'/><circle cx='50' cy='50' r='8' fill='%2366b8fa'/></svg>">
+<style>
+  :root{
+    --bg:#0d0f16; --panel:#12151d;
+    --accentA:#8c80fa; --accentB:#66b8fa; --red:#ff5973;
+    --txt:#eef0f6; --txt2:rgba(238,240,246,.62); --txt3:rgba(238,240,246,.36);
+    --line:rgba(255,255,255,.08);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; color:var(--txt); background:var(--bg);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    background-image:
+      radial-gradient(900px 700px at 12% -8%, rgba(140,128,250,.18), transparent 60%),
+      radial-gradient(900px 700px at 100% 8%, rgba(102,184,250,.14), transparent 55%);
+    background-attachment:fixed;
+  }
+  a{color:inherit}
+  .wrap{max-width:1080px; margin:0 auto; padding:0 24px}
+  h1,h2,h3{letter-spacing:-.02em; font-weight:650}
+
+  /* nav */
+  nav{display:flex; align-items:center; gap:14px; padding:20px 0}
+  .brand{display:flex; align-items:center; gap:10px; font-weight:700; font-size:18px}
+  .brand svg{width:26px;height:26px}
+  nav .spacer{flex:1}
+  nav a{color:var(--txt2); text-decoration:none; font-size:14px; padding:8px 10px; border-radius:8px}
+  nav a:hover{color:var(--txt); background:rgba(255,255,255,.05)}
+  nav a.cta{color:#0d0f16; background:linear-gradient(120deg,var(--accentA),var(--accentB)); font-weight:600}
+
+  /* hero */
+  .hero{display:grid; grid-template-columns:1.05fr .95fr; gap:32px; align-items:center; padding:48px 0 40px}
+  .pill{display:inline-flex; align-items:center; gap:7px; font-size:12.5px; color:var(--txt2);
+        border:1px solid var(--line); background:rgba(255,255,255,.04); padding:5px 11px; border-radius:999px}
+  .pill .dot{width:7px;height:7px;border-radius:50%;background:linear-gradient(120deg,var(--accentA),var(--accentB))}
+  .hero h1{font-size:54px; line-height:1.05; margin:18px 0 14px; font-weight:700}
+  .hero h1 .grad{background:linear-gradient(120deg,var(--accentA),var(--accentB)); -webkit-background-clip:text; background-clip:text; color:transparent}
+  .hero p.lede{font-size:18px; color:var(--txt2); max-width:34ch}
+  .cta-row{display:flex; flex-wrap:wrap; gap:12px; margin-top:26px}
+  .btn{display:inline-flex; align-items:center; gap:9px; padding:13px 20px; border-radius:12px; text-decoration:none; font-weight:600; font-size:15px}
+  .btn.primary{color:#0d0f16; background:linear-gradient(120deg,var(--accentA),var(--accentB)); box-shadow:0 10px 30px -10px rgba(140,128,250,.7)}
+  .btn.primary:hover{transform:translateY(-1px)}
+  .btn.ghost{color:var(--txt); border:1px solid var(--line); background:rgba(255,255,255,.03)}
+  .btn.ghost:hover{background:rgba(255,255,255,.07)}
+  .meta{margin-top:14px; font-size:13px; color:var(--txt3)}
+
+  .stage{display:grid; place-items:center}
+  .wheel{width:380px; height:380px; max-width:100%; animation:float 7s ease-in-out infinite}
+  @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
+  .chip{filter:drop-shadow(0 8px 14px rgba(0,0,0,.5))}
+
+  /* sections */
+  section{padding:56px 0}
+  .eyebrow{color:var(--accentA); font-weight:650; font-size:13px; letter-spacing:.08em; text-transform:uppercase}
+  h2{font-size:34px; margin:10px 0 8px}
+  .sub{color:var(--txt2); max-width:60ch}
+
+  .grid{display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin-top:34px}
+  .card{background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));
+        border:1px solid var(--line); border-radius:16px; padding:22px}
+  .card .ic{width:38px;height:38px;border-radius:10px; display:grid; place-items:center; font-size:19px;
+            background:rgba(140,128,250,.16); border:1px solid rgba(140,128,250,.28); margin-bottom:14px}
+  .card h3{font-size:17px; margin:0 0 6px}
+  .card p{color:var(--txt2); font-size:14.5px; margin:0}
+  code{font-family:"SF Mono",ui-monospace,Menlo,monospace; font-size:.86em; background:rgba(255,255,255,.07);
+       padding:2px 6px; border-radius:6px; color:#cfc9ff}
+
+  /* steps */
+  .steps{display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin-top:30px}
+  .step{position:relative; padding:22px; border-radius:16px; border:1px solid var(--line); background:rgba(255,255,255,.025)}
+  .step .n{font-family:"SF Mono",monospace; color:var(--accentB); font-weight:700; font-size:14px}
+  .step h3{font-size:16px; margin:8px 0 5px}
+  .step p{color:var(--txt2); font-size:14px; margin:0}
+
+  /* download */
+  .download{background:linear-gradient(180deg,rgba(140,128,250,.12),rgba(102,184,250,.06));
+            border:1px solid var(--line); border-radius:22px; padding:40px; text-align:center; margin-top:10px}
+  .download h2{font-size:30px}
+  .note{margin:18px auto 0; max-width:60ch; font-size:13.5px; color:var(--txt2);
+        background:rgba(0,0,0,.25); border:1px solid var(--line); border-radius:12px; padding:14px 16px; text-align:left}
+  .note b{color:var(--txt)}
+  .req{margin-top:14px; color:var(--txt3); font-size:13px}
+
+  footer{border-top:1px solid var(--line); margin-top:30px; padding:28px 0 60px; color:var(--txt3); font-size:13.5px;
+         display:flex; flex-wrap:wrap; gap:12px; align-items:center}
+  footer .spacer{flex:1}
+  footer a{color:var(--txt2); text-decoration:none}
+  footer a:hover{color:var(--txt)}
+
+  @media (max-width:820px){
+    .hero{grid-template-columns:1fr; gap:8px; text-align:center}
+    .hero p.lede{margin-inline:auto}
+    .cta-row{justify-content:center}
+    .stage{order:-1}
+    .wheel{width:300px;height:300px}
+    .grid,.steps{grid-template-columns:1fr}
+    .hero h1{font-size:42px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <nav>
+    <div class="brand">
+      <svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="36" fill="none" stroke="url(#g)" stroke-width="11"/><circle cx="50" cy="50" r="7" fill="#66b8fa"/><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8c80fa"/><stop offset="1" stop-color="#66b8fa"/></linearGradient></defs></svg>
+      Halo
+    </div>
+    <div class="spacer"></div>
+    <a href="#features">Features</a>
+    <a href="#how">How it works</a>
+    <a href="https://github.com/tinkerhaus/halo">GitHub</a>
+    <a class="cta" href="#download">Download</a>
+  </nav>
+
+  <header class="hero">
+    <div>
+      <span class="pill"><span class="dot"></span> On-device · open source · macOS</span>
+      <h1>A <span class="grad">command wheel</span><br>at your cursor.</h1>
+      <p class="lede">Hold a mouse button anywhere and a ring of commands blooms where you're pointing. Flick to a spoke and release to fire a keystroke, a macro, text, or a shell command — or release at the center to <b>dictate by voice</b>, on-device.</p>
+      <div class="cta-row">
+        <a class="btn primary" href="https://github.com/tinkerhaus/halo/releases/download/v0.1.0/Halo-0.1.0.dmg">↓ Download for macOS</a>
+        <a class="btn ghost" href="https://github.com/tinkerhaus/halo">View source</a>
+      </div>
+      <div class="meta">v0.1.0 · macOS 14+ · free under PolyForm Noncommercial</div>
+    </div>
+    <div class="stage">
+      <!-- the wheel -->
+      <svg class="wheel" viewBox="0 0 380 380" id="wheel"></svg>
+    </div>
+  </header>
+
+  <section id="features">
+    <div class="eyebrow">What it does</div>
+    <h2>One gesture, everything within reach.</h2>
+    <p class="sub">Halo lives in your menu bar and over every app. It re-skins itself for whatever you're using — terminal, browser, editor — and you can shape every wheel yourself.</p>
+    <div class="grid">
+      <div class="card"><div class="ic">◎</div><h3>Mouse-summoned</h3><p>Hold a side, forward/back, or middle-click button. The ring blooms at the cursor; the app underneath keeps focus and receives the keystroke.</p></div>
+      <div class="card"><div class="ic">🎙</div><h3>On-device dictation</h3><p>Release at the center to dictate. WhisperKit transcribes entirely on your Mac — nothing leaves the machine. Finish-ring to Send, Send + Return, or Cancel.</p></div>
+      <div class="card"><div class="ic">✎</div><h3>Visual Wheels editor</h3><p>Design wheels on a live radial canvas: drag spokes to reorder, reshape the arc by hand, record shortcuts, nest sub-rings, and search the full SF Symbols catalog.</p></div>
+      <div class="card"><div class="ic">⌘</div><h3>Scriptable</h3><p>A spoke can run a shell command with your dictation in <code>$HALO_TRANSCRIPT</code>. Chain steps by saving outputs with <code>as: name</code> so one feeds the next.</p></div>
+      <div class="card"><div class="ic">◐</div><h3>Liquid Glass</h3><p>The wheel frosts the app behind it; the editor and windows use native macOS 26 Liquid Glass. Soft, optional UI sounds round it off.</p></div>
+      <div class="card"><div class="ic">⌥</div><h3>Per-app profiles</h3><p>Different wheels for different apps. Start a profile blank or as a copy of another. Everything lives in one hand-editable <code>config.yaml</code> — the source of truth.</p></div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="eyebrow">How it works</div>
+    <h2>Hold, flick, release.</h2>
+    <div class="steps">
+      <div class="step"><div class="n">01</div><h3>Hold</h3><p>Press and hold your summon button. A ring of spokes blooms at the cursor — no clicking, no targeting a tiny toolbar.</p></div>
+      <div class="step"><div class="n">02</div><h3>Flick</h3><p>Sweep toward a spoke. Dwell on a well to open a sub-ring; the same spoke becomes <b>Back</b> in place. Pull into the empty wedge to cancel.</p></div>
+      <div class="step"><div class="n">03</div><h3>Release</h3><p>Let go on a spoke to fire it, or at the center to dictate. The action lands in whatever app you were already using.</p></div>
+    </div>
+  </section>
+
+  <section id="download">
+    <div class="download">
+      <div class="eyebrow">Get Halo</div>
+      <h2>Download Halo 0.1.0</h2>
+      <p class="sub" style="margin:6px auto 0">A small download — the dictation model fetches itself on first launch.</p>
+      <div class="cta-row" style="justify-content:center; margin-top:22px">
+        <a class="btn primary" href="https://github.com/tinkerhaus/halo/releases/download/v0.1.0/Halo-0.1.0.dmg">↓ Halo-0.1.0.dmg</a>
+        <a class="btn ghost" href="https://github.com/tinkerhaus/halo/releases">All releases</a>
+      </div>
+      <div class="note">
+        <b>First launch:</b> this build is signed with a self-signed certificate (not yet notarized), so macOS will warn you once. Right-click <b>Halo.app → Open</b> and confirm, or run<br>
+        <code>xattr -dr com.apple.quarantine /Applications/Halo.app</code><br>
+        Then grant <b>Accessibility</b>, <b>Input Monitoring</b>, and <b>Microphone</b> in Privacy &amp; Security, and relaunch.
+      </div>
+      <div class="req">Requires macOS 14+. Liquid Glass visuals need macOS 26; older systems fall back to a solid dark look.</div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="brand" style="font-size:15px">
+      <svg viewBox="0 0 100 100" style="width:20px;height:20px"><circle cx="50" cy="50" r="36" fill="none" stroke="url(#g)" stroke-width="11"/><circle cx="50" cy="50" r="7" fill="#66b8fa"/></svg>
+      Halo
+    </div>
+    <div class="spacer"></div>
+    <a href="https://github.com/tinkerhaus/halo">GitHub</a>
+    <a href="https://github.com/tinkerhaus/halo/releases">Releases</a>
+    <span>© tinkerhaus · PolyForm Noncommercial</span>
+  </footer>
+
+</div>
+
+<script>
+// Render the hero wheel with the app's geometry + frosted-glass look.
+(function(){
+  const NS="http://www.w3.org/2000/svg";
+  const svg=document.getElementById("wheel");
+  const cx=190, cy=190, R=120, hub=58, chip=33;
+  const spokes=[
+    {g:"↩",l:"Enter"},{g:"↑",l:"Up"},{g:"↓",l:"Down"},{g:"⇥",l:"Tab"},
+    {g:"⎋",l:"Esc"},{g:"■",l:"Stop"},{g:"⋯",l:"More"}
+  ];
+  const hot=5; // highlight "Stop"
+  const span=210, center=-90, n=spokes.length;
+  function el(t,a){const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;}
+  // defs
+  const defs=el("defs");
+  defs.innerHTML=`
+    <linearGradient id="acc" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8c80fa"/><stop offset="1" stop-color="#66b8fa"/></linearGradient>
+    <radialGradient id="disc" cx="50%" cy="34%" r="70%"><stop offset="0" stop-color="#2a2d3a"/><stop offset="1" stop-color="#15171f"/></radialGradient>
+    <radialGradient id="hubg" cx="50%" cy="34%" r="70%"><stop offset="0" stop-color="#1c1e29"/><stop offset="1" stop-color="#0f1118"/></radialGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="rgba(140,128,250,.20)"/><stop offset="1" stop-color="rgba(140,128,250,0)"/></radialGradient>`;
+  svg.appendChild(defs);
+  svg.appendChild(el("circle",{cx,cy,r:175,fill:"url(#glow)"}));
+  function place(i){const start=center-span/2, step=span/(n-1), a=(start+i*step)*Math.PI/180;return [cx+R*Math.cos(a), cy+R*Math.sin(a)];}
+  spokes.forEach((s,i)=>{
+    const [x,y]=place(i); const on=i===hot; const g=el("g",{class:"chip"});
+    g.appendChild(el("circle",{cx:x,cy:y,r:chip,fill:on?"url(#acc)":"url(#disc)",stroke:"rgba(255,255,255,.10)","stroke-width":1}));
+    g.appendChild(el("circle",{cx:x,cy:y-chip/2,r:chip,fill:"none",stroke:"rgba(255,255,255,.18)","stroke-width":1,"stroke-dasharray":`${chip*1.4} ${chip*6}`,opacity:.5}));
+    const gl=el("text",{x,y:y-4,"text-anchor":"middle","dominant-baseline":"middle",fill:"#fff","font-size":19});gl.textContent=s.g;g.appendChild(gl);
+    const lb=el("text",{x,y:y+15,"text-anchor":"middle","dominant-baseline":"middle",fill:on?"#fff":"rgba(255,255,255,.75)","font-size":9.5});lb.textContent=s.l;g.appendChild(lb);
+    svg.appendChild(g);
+  });
+  const h=el("g",{class:"chip"});
+  h.appendChild(el("circle",{cx,cy,r:hub,fill:"url(#hubg)",stroke:"url(#acc)","stroke-width":1.5,opacity:1}));
+  h.appendChild(el("circle",{cx,cy:cy-hub/2,r:hub,fill:"none",stroke:"rgba(255,255,255,.16)","stroke-width":1,"stroke-dasharray":`${hub*1.2} ${hub*7}`}));
+  const hi=el("text",{x:cx,y:cy-9,"text-anchor":"middle","dominant-baseline":"middle",fill:"#fff","font-size":21});hi.textContent="🎙";h.appendChild(hi);
+  const ht=el("text",{x:cx,y:cy+15,"text-anchor":"middle","dominant-baseline":"middle",fill:"rgba(255,255,255,.62)","font-size":9.5});ht.textContent="Release to dictate";h.appendChild(ht);
+  svg.appendChild(h);
+})();
+</script>
+</body>
+</html>
