@@ -37,14 +37,17 @@ Halo needs three (System Settings → Privacy & Security):
 ```
 Sources/Halo/
   App/      HaloApp (@main, MenuBarExtra + Settings) · AppController (NSApplicationDelegate,
-            owns the subsystems & wires them) · MenuBarMenu
-  Model/    Arc · Action (Step/Modifiers) · Halo (Spoke) · HaloConfig (Profile/VoiceConfig)
-            · HaloStore (persistence) · KeyChord (chord-string parsing)
+            owns the subsystems & wires them) · MenuBarMenu · HaloLog (file logger)
+  Model/    Arc · Action (Step/Modifiers) · Halo (Spoke) · HaloConfig (Profile/VoiceConfig/WhenMatch)
+            · LLMConfig (LLMProvider/Function/ContextConfig) · HaloStore (persistence) · KeyChord
   Input/    Summon (mouse-button trigger) · MouseHID · Keyboard (keystroke synthesis)
-            · ActionRunner (runs a Step sequence) · ButtonRecorder
+            · ActionRunner (runs a Step sequence) · ButtonRecorder · AXContext (text before caret)
+            · ProcessTree (descendant-process match for `when`)
   Voice/    Voice (record → WhisperKit transcribe → inject)
+  LLM/      LLMClient (OpenAI-compatible chat) · Keychain (API-key storage)
   Wheel/    WheelModel · WheelView · WheelController (presents the wheel, tracks the cursor)
   Views/    SettingsView · Components
+Tests/HaloTests/   swift-testing unit tests (model & config logic)
 ```
 
 Dependencies: **Yams** (YAML config), **WhisperKit** (on-device transcription).
@@ -52,14 +55,23 @@ Dependencies: **Yams** (YAML config), **WhisperKit** (on-device transcription).
 ### Domain model (value types, all `Codable`)
 
 - **`Action`** = an ordered `[Step]`; a `Step` is `.key(code, modifiers)`, `.text`,
-  `.paste(recent:)`, or `.pause(ms)`. This is the one primitive a spoke performs.
+  `.paste(recent:)`, `.pause(ms)`, `.verb` (a dictation control — dictate/send/cancel/undo),
+  `.bash` (a shell command), or `.function` (call a named LLM function). The one primitive a
+  spoke performs.
 - **`Spoke`** — `.performs(Action)` or `.opens(Halo)` (a nested ring, a "well" you
   dwell into).
 - **`Halo`** (layout) = an `Arc` (span + orientation as integer degrees) + `radius` +
   `[Spoke]`. Recursive.
-- **`Profile`** = name + app bundle IDs + a `Halo`.
-- **`HaloConfig`** = `summonButton` + `voice` + `fallback` halo + `[Profile]` — the
-  whole config, persisted by `HaloStore`.
+- **`Profile`** = name + app bundle IDs + a `Halo`, plus optional `finish` ring, per-app
+  `context`, and a `when` (`WhenMatch`: a runtime `process`/`titleMatches` condition — a
+  matching `when`-profile beats a plain one, so the same app can show different wheels).
+- **`HaloConfig`** = `summonButton` + `voice` + `default` halo + `[Profile]`, plus optional
+  `llm`, `functions`, and `context` — the whole config, persisted by `HaloStore`.
+- **LLM layer** (`LLMConfig.swift`): an **`LLMProvider`** (an OpenAI-compatible endpoint —
+  the API key is a Keychain `keyRef`, never in the file), a **`Function`** (a reusable prompt
+  + variables a spoke calls by name), and a **`ContextConfig`** (how to fill `{context}` —
+  lines before the caret via AX, or a `bash` command's stdout). Run by `AppController.runFunction`
+  via `LLMClient`; degrades to passing the raw dictation through when nothing is configured.
 
 ### Interaction (in `WheelController`)
 
@@ -78,7 +90,8 @@ Dependencies: **Yams** (YAML config), **WhisperKit** (on-device transcription).
 ## Configuration
 
 Everything lives in one **`~/Library/Application Support/Halo/config.yaml`** —
-summon button, voice mode, the fallback wheel, and per-app profiles. It is:
+summon button, voice mode, the `default` wheel, per-app profiles, and (optionally) the
+**LLM** engines and **functions**. It is:
 
 - **watched on disk** and re-read on the next summon, so it can be hand-edited (by a
   person or an agent) with no restart;
@@ -90,6 +103,13 @@ A spoke is `{ label, glyph, <one of>: key | text | steps | well }`. `glyph` is a
 Symbol name. `key` is a readable chord string parsed by `KeyChord` — e.g. `"cmd+s"`,
 `"ctrl+c"`, `"shift+tab"`, `"cmd+["`, `"up"`. Left/right mouse buttons are never
 allowed as the summon button.
+
+A step can also call an **LLM function**: `functions:` define named prompts; `llm:` defines the
+OpenAI-compatible engines they run on (key in the Keychain via `keyRef`). The function takes the
+dictation as input and can interpolate `{context}` captured from the focused app, and a profile's
+`when:` condition can swap the wheel for what's running (e.g. a Claude-Code wheel in a terminal).
+**Config-only for now** (no settings UI). The full schema lives in `skills/halo-config/SKILL.md`
+and is mirrored in the `#`-header `HaloStore` re-emits on save.
 
 ## Voice / model distribution
 

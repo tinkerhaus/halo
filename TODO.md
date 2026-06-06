@@ -19,6 +19,10 @@ Things deferred to come back to.
 - [ ] **Voice: cancel a session** — discard a recording without sending (e.g. Esc).
 - [ ] **Voice: VAD auto-stop** — optional `voice.mode` that stops on silence.
 - [ ] **Per-profile app list in UI** — currently seed-only / hand-edited in YAML.
+- [x] **LLM functions** — call an LLM from a spoke (`llm` / `functions` / `context` / `when`
+      in config); fail-safe pass-through when unconfigured. Schema in `skills/halo-config/SKILL.md`.
+- [ ] **LLM functions: settings UI** — engines, functions, and Keychain keys are config-only
+      today (hand-edited / via the halo-config skill); add a Settings pane to manage them.
 
 ## Distribution
 - [ ] Model download has a menu-bar % readout; consider a first-run onboarding for
