@@ -20,6 +20,14 @@ let package = Package(
             ],
             path: "Sources/Halo",
             resources: [.process("Resources")]
+        ),
+        .testTarget(
+            name: "HaloTests",
+            dependencies: [
+                "Halo",
+                .product(name: "Yams", package: "Yams")
+            ],
+            path: "Tests/HaloTests"
         )
     ]
 )
