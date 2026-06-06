@@ -13,7 +13,7 @@ import WhisperKit
 @Observable
 final class Voice {
     enum Status: Equatable {
-        case idle, downloading(Double), loadingModel, ready, recording, transcribing
+        case idle, downloading(Double), preparingModel, loadingModel, ready, recording, transcribing
         case failed(String)
     }
     private(set) var status: Status = .idle
@@ -28,12 +28,22 @@ final class Voice {
         switch status {
         case .idle:                  return "Starting…"
         case .downloading(let p):    return "Downloading model… \(Int(p * 100))%"
+        case .preparingModel:        return "Optimizing model for your Mac…"
         case .loadingModel:          return "Loading model…"
         case .ready:                 return "Ready"
         case .recording:             return "Recording…"
         case .transcribing:          return "Transcribing…"
         case .failed(let message):   return "Error: \(message)"
         }
+    }
+
+    /// An extra line shown only during the slow first-launch prep, so it reads as
+    /// expected work rather than a hang. `nil` in every other state.
+    var preparingNote: String? {
+        if case .preparingModel = status {
+            return "First run prepares the model for your Mac's Neural Engine — this can take a few minutes. It's cached, so later launches are quick."
+        }
+        return nil
     }
 
     private let model = "openai_whisper-large-v3-v20240930_turbo"
@@ -53,11 +63,20 @@ final class Voice {
                 let folder = try await WhisperKit.download(variant: model, from: repo) { progress in
                     DispatchQueue.main.async { self?.status = .downloading(progress.fractionCompleted) }
                 }
-                DispatchQueue.main.async { self?.status = .loadingModel }
+                // Split WhisperKit's load so its slow part is legible. Building with
+                // prewarm/load off makes init just locate the model (fast); we then run
+                // the two phases ourselves. `prewarmModels()` is the first-launch ANE
+                // "specialize" compile — minutes on a large model, and it previously hid
+                // behind a single "Loading…" label that read as a hang. It's cached
+                // afterwards, so later launches breeze through it.
+                DispatchQueue.main.async { self?.status = .preparingModel }
                 var config = WhisperKitConfig(model: model, verbose: false, logLevel: .error,
-                                              prewarm: true, load: true, download: false)
+                                              prewarm: false, load: false, download: false)
                 config.modelFolder = folder.path
                 let pipe = try await WhisperKit(config)
+                try await pipe.prewarmModels()
+                DispatchQueue.main.async { self?.status = .loadingModel }
+                try await pipe.loadModels()
                 DispatchQueue.main.async { self?.whisper = pipe; self?.status = .ready }
             } catch {
                 DispatchQueue.main.async { self?.status = .failed(error.localizedDescription) }

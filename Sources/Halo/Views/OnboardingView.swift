@@ -140,6 +140,13 @@ struct OnboardingView: View {
                 if case .downloading(let p) = voice.status {
                     ProgressView(value: p).tint(Color(red: 0.55, green: 0.50, blue: 0.98))
                 }
+                if let note = voice.preparingNote {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text(note).font(.system(size: 11)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
                 Text("Downloads once (~1.5 GB) from Hugging Face, then stays cached. You can start using the wheel for keystrokes before it finishes; dictation lights up when it's ready.")
                     .font(.system(size: 11)).foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)

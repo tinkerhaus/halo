@@ -12,6 +12,9 @@ struct MenuBarMenu: View {
 
     var body: some View {
         Text("Voice: \(voice.statusText)")
+        if let note = voice.preparingNote {
+            Text(note)
+        }
         if store.configError != nil {
             Text("⚠︎ Config invalid — using defaults")
         }
