@@ -19,6 +19,12 @@ struct MenuBarMenu: View {
             Text("⚠︎ Config invalid — using defaults")
         }
         Divider()
+        Menu("Profile") {
+            profileItem("Automatic", value: nil)
+            if !store.config.profiles.isEmpty { Divider() }
+            ForEach(store.config.profiles) { profileItem($0.name, value: $0.name) }
+        }
+        Divider()
         Button("Open Halo") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
         Button("Reveal Config in Finder") { NSWorkspace.shared.activateFileViewerSelecting([store.configURL]) }
         Button("Reset Config to Defaults…") { confirmReset() }
@@ -28,6 +34,15 @@ struct MenuBarMenu: View {
         Divider()
         Button("Quit Halo") { NSApp.terminate(nil) }
             .keyboardShortcut("q")
+    }
+
+    /// One row of the Profile submenu — a checkmark marks the pinned one.
+    /// `nil` means automatic (app/`when` matching).
+    @ViewBuilder private func profileItem(_ title: String, value: String?) -> some View {
+        Button { store.profileOverride = value } label: {
+            if store.profileOverride == value { Label(title, systemImage: "checkmark") }
+            else { Text(title) }
+        }
     }
 
     /// Confirm before overwriting the user's config (an accessory app must

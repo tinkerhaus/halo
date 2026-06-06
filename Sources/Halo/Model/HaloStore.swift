@@ -16,6 +16,11 @@ final class HaloStore {
     var draft: HaloConfig
     var hasUnsavedChanges: Bool { draft != config }
 
+    /// A manually-pinned profile name (from the menu bar) that overrides automatic
+    /// app/`when` matching; nil = automatic. Runtime-only — resets to automatic on
+    /// relaunch, and never written to disk (so it can't race the config reload).
+    var profileOverride: String?
+
     var configURL: URL { fileURL }
 
     /// Non-nil when the on-disk config failed to parse. Halo falls back to the
@@ -118,9 +123,45 @@ final class HaloStore {
     # sounds       : soft UI cues on summon / select / fire / send (true or false).
     # voice.finish : the default finish ring (a halo) shown when you stop a dictation.
     #                A profile may set its own `finish`; omit both for a built-in plain-Send ring.
+    # llm          : OpenAI-compatible endpoints (the *engines*) — optional, omit if unused.
+    #                  providers: { <name>: { base: "<url ending in /v1>", model, keyRef?, thinking? } }
+    #                  default:   which provider a function uses when it names none
+    #                thinking: false ⇒ tell the server to disable the model's reasoning (faster; sends
+    #                          chat_template_kwargs.enable_thinking=false). Omit to leave the model's default.
+    #                keyRef is a *Keychain* item name (NOT the key) — service "Halo". Add a key with:
+    #                  security add-generic-password -s Halo -a <keyRef> -w <your-api-key>
+    #                Local servers (vLLM/Ollama) usually need no key — omit keyRef. e.g.:
+    #                  llm:
+    #                    providers:
+    #                      local:  { base: "http://localhost:11434/v1", model: "llama3.1" }
+    #                      openai: { base: "https://api.openai.com/v1", model: "gpt-4o-mini", keyRef: "openai" }
+    #                    default: local
+    # functions    : named functions a spoke calls by name (the *what to do*) — optional. Each:
+    #                { prompt, variables?, provider?, temperature? }. `prompt` interpolates {variables}:
+    #                {transcript} (the dictation), the function's own variables (with defaults), and values
+    #                passed at the call site. The dictation is the function's input. e.g.:
+    #                  functions:
+    #                    clean:     { prompt: "Clean up this dictation. Output only the cleaned text." }
+    #                    translate: { prompt: "Translate to {lang}. Output only the translation.",
+    #                                 variables: { lang: English } }
+    #                    ask:       { prompt: "Answer the user concisely." }
+    # context      : how to fill {context} when a function's prompt uses it (optional). Captured once,
+    #                when dictation starts — it also biases the transcriber toward the surrounding text.
+    #                  { lines: N }            read N lines before the caret via Accessibility (default 12;
+    #                                          works in native text fields — TextEdit, Mail, Notes, …)
+    #                  { bash: "command" }     use a command's stdout instead (e.g. terminal scrollback)
+    #                Set globally here, and/or per-profile (a profile's `context` wins for its apps). e.g.:
+    #                  context: { lines: 12 }
+    #                  …and inside a terminal profile: context: { bash: "tmux capture-pane -p | tail -40" }
     # default      : the wheel shown when no profile matches the frontmost app.
-    # profiles     : list of { name, apps: [bundleID], halo, finish? }. The frontmost app picks
-    #                the profile; most specific (fewest apps) wins, so a 1-app profile overrides a group.
+    # profiles     : list of { name, apps: [bundleID], halo, finish?, context?, when? }. The frontmost app
+    #                picks the profile; most specific (fewest apps) wins, so a 1-app profile overrides a group.
+    #                when : a runtime condition — the profile only matches while it holds, and a matching
+    #                       `when`-profile beats a plain one (so the same app → different wheels). Fields:
+    #                         process: "name"      true if that process runs under the frontmost app
+    #                                              (e.g. `claude` inside the front terminal)
+    #                         titleMatches: "regex" true if the focused window title matches
+    #                       Both given ⇒ both must hold. e.g. a Claude-Code wheel: when: { process: claude }
     # halo         : { arc: { spanDegrees, centerDegrees }, radius, spokes: [...], center? }
     #                The arc never closes a full circle; the empty wedge = release-to-cancel.
     #                centerDegrees -90 = straight up.
@@ -131,12 +172,19 @@ final class HaloStore {
     #                        mods: cmd|ctrl|opt|shift   keys: a-z 0-9, return/enter, esc, tab, space,
     #                        delete, up/down/left/right, home/end, and [ ] / \\\\ ; ' , . - = `
     #                text  : type literal text
-    #                steps : ordered list of { key | text | paste | pause | do | bash } — runs in sequence.
+    #                steps : ordered list — runs in sequence. Each is one of { key | text | paste | pause |
+    #                        do | bash } OR a function call (just the function's name).
     #                        paste: N (clipboard history)   pause: ms
     #                        do: send | dictate | cancel | undo  (dictation verbs — see below)
     #                        bash: "shell command" — runs via your login shell; $HALO_TRANSCRIPT holds the
     #                              dictation. `inject: true` types its stdout back. `as: name` saves the
     #                              stdout so a later step can read it as $name (steps run in order).
+    #                        function call: the function's name (from `functions:`). Bare `- clean` calls it
+    #                              and types the reply back. To pass variables / qualify, use the map form:
+    #                              `- translate: { lang: French }` with optional `inject:` (default true),
+    #                              `provider:`, and `as: name` (save the reply) as siblings. An unknown name
+    #                              is used as a literal instruction. If no provider / the call fails, the
+    #                              dictation is passed through untouched, so words are never lost.
     #                well  : a nested halo (a sub-ring you dwell into): { arc, radius, spokes }
     #                glyph : an SF Symbol name, e.g. "arrow.up", "stop.circle"
     # do (verbs)   : dictate — start a voice session (the hub becomes the live waveform)

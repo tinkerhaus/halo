@@ -63,6 +63,14 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <string>Halo uses the microphone to dictate when you release the wheel at its center. Audio is processed on-device.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>Halo transcribes your dictation on-device.</string>
+    <!-- LLM steps talk to a user-configured OpenAI-compatible endpoint, often a
+         local/LAN/tailnet server reached over plain HTTP. Allow cleartext so those
+         work; HTTPS endpoints (cloud providers) are unaffected. Not sandboxed, so
+         no network entitlement is needed. -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key> <true/>
+    </dict>
 </dict>
 </plist>
 PLIST

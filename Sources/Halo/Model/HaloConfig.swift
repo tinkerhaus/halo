@@ -24,8 +24,41 @@ struct VoiceConfig: Codable, Equatable {
     }
 }
 
+/// A runtime condition that makes a profile match only when it holds — so the same
+/// app can map to different wheels depending on what's actually running. `process`
+/// is true when a process of that name is the frontmost app or a descendant of it
+/// (e.g. `claude` running inside the front terminal). `titleMatches` is a regex
+/// against the focused window's title. Both given ⇒ both must hold. Evaluated
+/// natively (no shell) so it's cheap on summon.
+struct WhenMatch: Codable, Equatable {
+    var process: String?
+    var titleMatches: String?
+
+    var isEmpty: Bool { (process ?? "").isEmpty && (titleMatches ?? "").isEmpty }
+
+    init(process: String? = nil, titleMatches: String? = nil) {
+        self.process = process; self.titleMatches = titleMatches
+    }
+
+    private enum K: String, CodingKey { case process, titleMatches }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: K.self)
+        if let process, !process.isEmpty { try c.encode(process, forKey: .process) }
+        if let titleMatches, !titleMatches.isEmpty { try c.encode(titleMatches, forKey: .titleMatches) }
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: K.self)
+        process = (try? c.decode(String.self, forKey: .process)).flatMap { $0.isEmpty ? nil : $0 }
+        titleMatches = (try? c.decode(String.self, forKey: .titleMatches)).flatMap { $0.isEmpty ? nil : $0 }
+    }
+}
+
 /// A halo bound to a set of apps. The frontmost app picks the profile; if none
-/// match, the config's `default` halo is used. Serializes as `{name, apps, halo}`
+/// match, the config's `default` halo is used. An optional `when` narrows the match
+/// to a runtime condition (e.g. Claude Code running in the front terminal), and a
+/// matching `when`-profile beats a plain one. Serializes as `{name, apps, halo, …}`
 /// (the `id` is runtime-only).
 struct Profile: Equatable, Identifiable {
     var id = UUID()
@@ -33,22 +66,28 @@ struct Profile: Equatable, Identifiable {
     var appBundleIDs: [String]
     var halo: Halo
     var finish: Halo?            // optional per-app finish ring (overrides voice.finish)
+    var context: ContextConfig?  // optional per-app context source for {context} (overrides the global one)
+    var when: WhenMatch?         // optional runtime condition; a matching `when`-profile wins over a plain one
 
-    init(name: String, appBundleIDs: [String], halo: Halo, finish: Halo? = nil) {
+    init(name: String, appBundleIDs: [String], halo: Halo, finish: Halo? = nil,
+         context: ContextConfig? = nil, when: WhenMatch? = nil) {
         self.name = name
         self.appBundleIDs = appBundleIDs
         self.halo = halo
         self.finish = finish
+        self.context = context
+        self.when = when
     }
 
     // `id` is runtime-only — exclude it from equality (see Spoke).
     static func == (a: Profile, b: Profile) -> Bool {
-        a.name == b.name && a.appBundleIDs == b.appBundleIDs && a.halo == b.halo && a.finish == b.finish
+        a.name == b.name && a.appBundleIDs == b.appBundleIDs && a.halo == b.halo
+            && a.finish == b.finish && a.context == b.context && a.when == b.when
     }
 }
 
 extension Profile: Codable {
-    private enum K: String, CodingKey { case name, apps, halo, finish }
+    private enum K: String, CodingKey { case name, apps, halo, finish, context, when }
 
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: K.self)
@@ -56,6 +95,8 @@ extension Profile: Codable {
         try c.encode(appBundleIDs, forKey: .apps)
         try c.encode(halo, forKey: .halo)
         try c.encodeIfPresent(finish, forKey: .finish)
+        try c.encodeIfPresent(context, forKey: .context)
+        try c.encodeIfPresent(when, forKey: .when)
     }
 
     init(from decoder: Decoder) throws {
@@ -65,6 +106,8 @@ extension Profile: Codable {
         appBundleIDs = (try? c.decodeIfPresent([String].self, forKey: .apps)) ?? []
         halo = (try? c.decodeIfPresent(Halo.self, forKey: .halo)) ?? Halo()
         finish = try? c.decodeIfPresent(Halo.self, forKey: .finish)
+        context = try? c.decodeIfPresent(ContextConfig.self, forKey: .context)
+        when = try? c.decodeIfPresent(WhenMatch.self, forKey: .when)
     }
 }
 
@@ -77,21 +120,28 @@ struct HaloConfig: Codable, Equatable {
     var summonButton: Int
     var sounds: Bool               // soft UI cues on summon / select / fire / send
     var voice: VoiceConfig
+    var llm: LLMConfig?            // OpenAI-compatible endpoints (the engines) functions run on
+    var functions: [String: Function]? // named functions a spoke calls by name (each has a prompt + variables)
+    var context: ContextConfig?   // global default {context} source (a profile may override per-app)
     var defaultHalo: Halo          // wheel shown when no profile matches (YAML key: `default`)
     var profiles: [Profile]
 
     init(summonButton: Int = 4, sounds: Bool = true, voice: VoiceConfig = VoiceConfig(),
+         llm: LLMConfig? = nil, functions: [String: Function]? = nil, context: ContextConfig? = nil,
          defaultHalo: Halo, profiles: [Profile]) {
         self.summonButton = summonButton
         self.sounds = sounds
         self.voice = voice
+        self.llm = llm
+        self.functions = functions
+        self.context = context
         self.defaultHalo = defaultHalo
         self.profiles = profiles
     }
 
     // `default` is the user-facing key; `fallback` is still read as a deprecated
     // alias so existing configs load (they self-heal to `default` on the next save).
-    enum CodingKeys: String, CodingKey { case summonButton, sounds, voice, profiles, defaultHalo = "default" }
+    enum CodingKeys: String, CodingKey { case summonButton, sounds, voice, llm, functions, context, profiles, defaultHalo = "default" }
     private enum LegacyKeys: String, CodingKey { case fallback }
 
     init(from decoder: Decoder) throws {
@@ -100,6 +150,9 @@ struct HaloConfig: Codable, Equatable {
         summonButton = (try? c.decodeIfPresent(Int.self, forKey: .summonButton)) ?? base.summonButton
         sounds = (try? c.decodeIfPresent(Bool.self, forKey: .sounds)) ?? base.sounds
         voice = (try? c.decodeIfPresent(VoiceConfig.self, forKey: .voice)) ?? base.voice
+        llm = (try? c.decodeIfPresent(LLMConfig.self, forKey: .llm)) ?? nil
+        functions = (try? c.decodeIfPresent([String: Function].self, forKey: .functions)) ?? nil
+        context = (try? c.decodeIfPresent(ContextConfig.self, forKey: .context)) ?? nil
         var resolved = (try? c.decodeIfPresent(Halo.self, forKey: .defaultHalo)) ?? nil
         if resolved == nil, let legacy = try? decoder.container(keyedBy: LegacyKeys.self) {
             resolved = (try? legacy.decodeIfPresent(Halo.self, forKey: .fallback)) ?? nil
@@ -113,8 +166,23 @@ struct HaloConfig: Codable, Equatable {
     private func profile(forApp bundleID: String?) -> Profile? {
         guard let bundleID else { return nil }
         return profiles
-            .filter { $0.appBundleIDs.contains(bundleID) }
+            .filter { $0.appBundleIDs.contains(bundleID) && $0.when == nil }   // static profiles only
             .min { $0.appBundleIDs.count < $1.appBundleIDs.count }
+    }
+
+    /// The active profile for the frontmost app, honoring `when` conditions: a
+    /// `when`-profile whose condition currently holds (evaluated by `matches`) wins
+    /// over any plain profile; otherwise the most-specific plain profile. Used for
+    /// the live wheel so the layout can follow what's running (e.g. Claude Code).
+    func activeProfile(forApp bundleID: String?, matches: (WhenMatch) -> Bool) -> Profile? {
+        guard let bundleID else { return nil }
+        let candidates = profiles.filter { $0.appBundleIDs.contains(bundleID) }
+        if let dynamic = candidates
+            .filter({ ($0.when.map { !$0.isEmpty } ?? false) && matches($0.when!) })
+            .min(by: { $0.appBundleIDs.count < $1.appBundleIDs.count }) {
+            return dynamic
+        }
+        return candidates.filter { $0.when == nil }.min { $0.appBundleIDs.count < $1.appBundleIDs.count }
     }
 
     /// The halo to summon for a given frontmost app.
@@ -126,6 +194,12 @@ struct HaloConfig: Codable, Equatable {
     /// global `voice.finish`, else the built-in plain-Send default.
     func finish(forApp bundleID: String?) -> Halo {
         profile(forApp: bundleID)?.finish ?? voice.finish ?? HaloConfig.defaultFinish()
+    }
+
+    /// How to capture `{context}` for a given frontmost app: the matched profile's
+    /// source, else the global one, else the built-in AX default (lines before caret).
+    func contextConfig(forApp bundleID: String?) -> ContextConfig {
+        profile(forApp: bundleID)?.context ?? context ?? .defaultAX
     }
 
     // MARK: - Starter configuration

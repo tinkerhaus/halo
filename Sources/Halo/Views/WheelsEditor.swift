@@ -638,6 +638,29 @@ struct WheelsEditor: View {
                         .toggleStyle(.checkbox).font(.system(size: 10)).foregroundStyle(.secondary)
                 }
             }
+        case .function:
+            functionStepEditor(i, j)
+        }
+    }
+
+    @ViewBuilder private func functionStepEditor(_ i: Int, _ j: Int) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 8) {
+                Text("call").font(.system(size: 10)).foregroundStyle(.secondary)
+                TextField("function name (from functions:) or instruction", text: functionNameBinding(i, j))
+                    .textFieldStyle(.plain).font(.system(size: 11)).padding(5).background(fieldBG)
+                TextField("provider", text: functionProviderBinding(i, j))
+                    .textFieldStyle(.plain).font(.system(size: 11, design: .monospaced))
+                    .padding(4).background(fieldBG).frame(width: 90)
+            }
+            HStack(spacing: 8) {
+                Text("as $").font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                TextField("name", text: functionOutputBinding(i, j))
+                    .textFieldStyle(.plain).font(.system(size: 11, design: .monospaced))
+                    .padding(4).background(fieldBG).frame(width: 84)
+                Toggle("Inject reply", isOn: functionInjectBinding(i, j))
+                    .toggleStyle(.checkbox).font(.system(size: 10)).foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -664,6 +687,7 @@ struct WheelsEditor: View {
             Button("Key") { addStep(i, .key(code: Key.enter, modifiers: [])) }
             Button("Text") { addStep(i, .text("")) }
             Button("Bash") { addStep(i, .bash(command: "", inject: false, name: nil)) }
+            Button("Function") { addStep(i, .function(name: "", vars: [:], provider: nil, inject: true, outputName: nil)) }
             Button("Paste") { addStep(i, .paste(recent: 0)) }
             Button("Pause") { addStep(i, .pause(milliseconds: 200)) }
             Menu("Verb") {
@@ -681,6 +705,7 @@ struct WheelsEditor: View {
         case .pause: return "PAUSE"
         case .verb:  return "DO"
         case .bash:  return "BASH"
+        case .function: return "FN"
         }
     }
 
@@ -749,6 +774,28 @@ struct WheelsEditor: View {
                     }
                 })
     }
+    private func functionNameBinding(_ i: Int, _ j: Int) -> Binding<String> {
+        Binding(get: { if case .function(let n, _, _, _, _)? = step(i, j) { return n }; return "" },
+                set: { v in if case .function(_, let vars, let prov, let inject, let out)? = step(i, j) {
+                    setStep(i, j, .function(name: v, vars: vars, provider: prov, inject: inject, outputName: out)) } })
+    }
+    private func functionProviderBinding(_ i: Int, _ j: Int) -> Binding<String> {
+        Binding(get: { if case .function(_, _, let prov, _, _)? = step(i, j) { return prov ?? "" }; return "" },
+                set: { v in if case .function(let n, let vars, _, let inject, let out)? = step(i, j) {
+                    let t = v.trimmingCharacters(in: .whitespaces)
+                    setStep(i, j, .function(name: n, vars: vars, provider: t.isEmpty ? nil : t, inject: inject, outputName: out)) } })
+    }
+    private func functionInjectBinding(_ i: Int, _ j: Int) -> Binding<Bool> {
+        Binding(get: { if case .function(_, _, _, let inject, _)? = step(i, j) { return inject }; return true },
+                set: { v in if case .function(let n, let vars, let prov, _, let out)? = step(i, j) {
+                    setStep(i, j, .function(name: n, vars: vars, provider: prov, inject: v, outputName: out)) } })
+    }
+    private func functionOutputBinding(_ i: Int, _ j: Int) -> Binding<String> {
+        Binding(get: { if case .function(_, _, _, _, let out)? = step(i, j) { return out ?? "" }; return "" },
+                set: { v in if case .function(let n, let vars, let prov, let inject, _)? = step(i, j) {
+                    let t = v.trimmingCharacters(in: .whitespaces)
+                    setStep(i, j, .function(name: n, vars: vars, provider: prov, inject: inject, outputName: t.isEmpty ? nil : t)) } })
+    }
 
     // MARK: - Summaries
 
@@ -770,6 +817,9 @@ struct WheelsEditor: View {
         case .bash(let c, _, let n):
             let cmd = c.isEmpty ? "…" : String(c.prefix(18))
             return n.map { "$ \(cmd) → $\($0)" } ?? "$ \(cmd)"
+        case .function(let fn, _, _, _, let n):
+            let label = fn.isEmpty ? "…" : String(fn.prefix(18))
+            return n.map { "\(label)() → $\($0)" } ?? "\(label)()"
         }
     }
 

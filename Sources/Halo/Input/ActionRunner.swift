@@ -37,6 +37,16 @@ enum ActionRunner {
                         _ vars: [String: String], _ done: @escaping (_ output: String?) -> Void) -> Void
         = { _, _, _, _, done in done(nil) }
 
+    /// Call the function named `name` (resolved against `functions:`), with `vars`
+    /// available for `{…}` interpolation. `provider` overrides the engine (nil ⇒
+    /// the function's / the default). `capture` ⇒ a later step needs the reply (wait
+    /// for it); `inject` ⇒ type the reply back. Falls back to the raw input if the
+    /// call fails, so words are never lost. Calls back with the reply (or nil).
+    /// Wired by `AppController`.
+    static var onFunction: (_ name: String, _ vars: [String: String], _ provider: String?, _ inject: Bool,
+                            _ capture: Bool, _ done: @escaping (_ output: String?) -> Void) -> Void
+        = { _, _, _, _, _, done in done(nil) }
+
     static func run(_ action: Action) {
         // Any action other than undo buries the last dictation, so undo goes inert.
         if !action.steps.contains(.verb(.undo)) { onActed() }
@@ -82,6 +92,17 @@ enum ActionRunner {
                 onBash(command, inject, name != nil, v) { output in
                     var nv = v
                     if let name, let output { nv[name] = output }       // save stdout as $name
+                    next(nv)
+                }
+            }
+        case let .function(name, callVars, provider, inject, outputName):
+            withTranscript(vars) { v in
+                var ctx = v
+                ctx["transcript"] = v["TRANSCRIPT"] ?? ""               // {transcript} alias
+                for (k, val) in callVars { ctx[k] = val }               // call-site vars win
+                onFunction(name, ctx, provider, inject, outputName != nil) { output in
+                    var nv = v
+                    if let outputName, let output { nv[outputName] = output }   // save reply for a later step
                     next(nv)
                 }
             }

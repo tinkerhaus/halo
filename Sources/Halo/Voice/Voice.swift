@@ -157,7 +157,11 @@ final class Voice {
     /// Transcribe the stopped recording. Stores the result for preview, calls
     /// `onPreview` (to show it in the hub), and releases anything waiting in
     /// `send`. No-op if there's no recording.
-    func transcribe(onPreview: @escaping (String) -> Void) {
+    ///
+    /// `prompt` is the surrounding text (e.g. lines before the caret) fed to the
+    /// model as a conditioning prompt to bias spelling/vocabulary toward the
+    /// context. Empty = no biasing.
+    func transcribe(prompt: String = "", onPreview: @escaping (String) -> Void) {
         guard let url = recordingURL else { resolveTranscript(""); onPreview(""); return }
         recordingURL = nil
         status = .transcribing
@@ -169,6 +173,14 @@ final class Voice {
             options.withoutTimestamps = true
             options.skipSpecialTokens = true
             options.suppressBlank = true
+            // Bias transcription with the surrounding context (Whisper's prompt
+            // conditioning). WhisperKit trims this to the prompt window itself.
+            let prompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !prompt.isEmpty, let tokenizer = whisper?.tokenizer {
+                let tokens = tokenizer.encode(text: " " + prompt)
+                    .filter { $0 < tokenizer.specialTokens.specialTokenBegin }
+                if !tokens.isEmpty { options.promptTokens = tokens; options.usePrefillPrompt = true }
+            }
 
             var text = ""
             if let results = try? await whisper?.transcribe(audioPath: url.path, decodeOptions: options) {
