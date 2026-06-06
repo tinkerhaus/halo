@@ -60,6 +60,15 @@ the transcript), `cancel`, `undo` — so a finish ring's center can be, for exam
 command with your dictation in `$HALO_TRANSCRIPT`, so a spoke can pipe what you said to a CLI
 or AI agent (and chain steps via `as:`).
 
+Spokes can also call **AI functions**: point Halo at any OpenAI-compatible endpoint (a local
+Ollama / LM Studio server, or a cloud key) and define named functions (`clean`, `translate`,
+`ask`). A spoke then sends your dictation to the model and types the reply back — optionally with
+`{context}` pulled from the app you're in, and with `when:` rules so the same app can show a
+different wheel depending on what's running (e.g. a Claude-Code wheel inside your terminal). It's
+**config-only for now** (no settings UI yet); the full schema is in the
+[`halo-config` skill](skills/halo-config/SKILL.md), and there's a step-by-step
+[**Getting Started** guide](GETTING_STARTED.md).
+
 **Let an AI agent configure it for you.** The [`halo-config` skill](skills/) teaches Claude
 Code (or any agent) the full schema — install it, then just ask: *"add a reopen-last-tab spoke
 to my browser wheel,"* or *"make a Slack profile for reactions and replies."*
@@ -79,12 +88,14 @@ models, and a model layer kept free of AppKit/CoreGraphics.
 
 ```
 Sources/Halo/
-  App/    HaloApp · AppController · MenuBarMenu
-  Model/  Arc · Action (Step/Verb) · Halo (Spoke) · HaloConfig · HaloStore · KeyChord
-  Input/  Summon · MouseHID · Keyboard · ActionRunner · ButtonRecorder · SystemAudio
+  App/    HaloApp · AppController · MenuBarMenu · Permissions · UpdateChecker
+  Model/  Arc · Action (Step/Verb) · Halo (Spoke) · HaloConfig · HaloStore · KeyChord · LLMConfig
+  Input/  Summon · MouseHID · Keyboard · ActionRunner · KeystrokeRecorder · AXContext · ProcessTree
   Voice/  Voice (record → WhisperKit → inject)
+  LLM/    LLMClient (OpenAI-compatible) · Keychain
   Wheel/  WheelModel · WheelView · WheelController
-  Views/  SettingsView · Components
+  Views/  WheelsEditor · MainWindow · OnboardingView · Components
+Tests/HaloTests/   unit tests (swift-testing) for the model & config logic
 ```
 
 Dependencies: [Yams](https://github.com/jpsim/Yams) (YAML config) and

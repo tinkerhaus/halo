@@ -41,12 +41,17 @@ summonButton: 4          # mouse button (NSEvent #): 2=middle, 3=back, 4=forward
 sounds: true             # soft UI cues on summon / select / fire / send
 voice:
   finish: <halo>         # the finish ring shown after a dictation (see Wells/Center; a profile can override it)
+llm: { providers: {…}, default: <name> }   # optional — LLM engines for AI functions (see AI functions)
+functions: { <name>: {…} }                 # optional — named AI functions a spoke can call
+context: { lines: 12 }                      # optional — how to fill {context} for functions
 default: <halo>          # the wheel shown when no profile matches the frontmost app
 profiles:                # per-app wheels — the frontmost app's bundle ID picks one (fewest apps wins)
   - name: "Browser"
     apps: [com.apple.Safari, com.google.Chrome]
     halo: <halo>
     finish: <halo>       # optional; overrides voice.finish for these apps
+    context: <ctx>       # optional; per-app {context} source (overrides the global one)
+    when: <condition>    # optional; runtime match (see AI functions → Dynamic profiles)
 ```
 (`default` was once `fallback`; the old key is still read as a deprecated alias.)
 
@@ -85,6 +90,7 @@ Readable string; **last token is the key**, earlier tokens are modifiers.
 - pause: 200            # wait N ms
 - do:    send           # dictation verb: dictate | send | cancel | undo
 - bash:  "echo hi"      # run a shell command (see Bash)
+- clean                 # call an AI function by name — types the reply back (see AI functions)
 ```
 **`do` verbs** (mid-dictation): `dictate` start a session · `send` inject the transcript ·
 `cancel` discard · `undo` delete the last injected dictation. Compose:
@@ -105,6 +111,74 @@ steps:
   - { bash: "summarize \"$clean\"", inject: true }       # uses step 1's output
 ```
 On a normal wheel (no dictation), `$HALO_TRANSCRIPT` is just empty.
+
+### AI functions (LLM)
+A **function** sends your dictation to an LLM and types the reply back — "clean this up",
+"translate to French", "answer this". Define the *engines* (`llm:`) and the *functions*
+(`functions:`) once, then call a function from any spoke by name. All of it is optional: with
+nothing configured, a function call passes your words through untouched, so nothing breaks.
+
+**Engines — `llm:`** (top level). Any OpenAI-compatible `/v1/chat/completions` endpoint — a local
+server (Ollama, LM Studio, vLLM) or a cloud provider.
+```yaml
+llm:
+  providers:
+    local:  { base: "http://localhost:11434/v1", model: "llama3.1" }       # local: no key
+    openai: { base: "https://api.openai.com/v1", model: "gpt-4o-mini", keyRef: "openai" }
+  default: local          # which provider a function uses when it names none
+```
+- `base` — URL up to and including `/v1`. `model` — the name the server expects.
+- `keyRef` — a **Keychain** item name, **not** the key. Local servers omit it. Add a cloud key with:
+  `security add-generic-password -s Halo -a openai -w sk-…`  (service is always `Halo`).
+- `thinking: false` — tell a reasoning model to skip its thinking (faster).
+
+**Functions — `functions:`** (top level). Each has a `prompt` (the instruction). The dictation is the
+input; the prompt interpolates `{transcript}` (your words), `{context}` (below), the function's own
+`variables` (with defaults), and any value passed at the call site.
+```yaml
+functions:
+  clean:     { prompt: "Clean up this dictation — fix grammar and filler. Output only the text." }
+  translate: { prompt: "Translate to {lang}. Output only the translation.", variables: { lang: French } }
+  reply:     { prompt: "Draft a reply, using the conversation:\n{context}" }
+```
+Per-function options: `provider:` (override the engine for this function), `temperature:`.
+
+**Calling a function — a step.** A step can be a function name:
+```yaml
+- clean                              # bare: call `clean`, type the reply back
+- { translate: { lang: German } }    # pass variables (override the function's defaults)
+- { ask: {}, as: answer }            # save the reply as $answer for a later step (don't inject)
+- { summarize: {}, provider: openai, inject: true }
+```
+- bare name ⇒ call it and inject the reply. map form ⇒ pass `variables`, plus optional `inject:`
+  (default `true`), `provider:`, and `as: name` (save the reply for a later step).
+- An **unknown name is used as the literal instruction**, so `- "make this formal"` works with no
+  `functions:` entry.
+- No provider configured, or the call fails ⇒ the **raw dictation is passed through** (words are
+  never lost).
+
+**Context — `context:`** fills `{context}` from the app you're dictating into. Captured once when
+dictation starts (it also biases the transcriber toward the surrounding words).
+```yaml
+context: { lines: 12 }     # global: N lines before the caret via Accessibility
+```
+- `{ lines: N }` reads N lines before the caret (works in native text fields — TextEdit, Mail,
+  Notes…). `{ bash: "cmd" }` uses a command's stdout instead (for terminals / Electron apps, which
+  don't expose text to Accessibility). Unavailable ⇒ resolves to `""` and the function just runs
+  without context. Set globally, and/or per-profile (a profile's `context` wins for its apps).
+
+**Dynamic profiles — `when:`** make a profile match only while a condition holds, so the *same* app
+can show different wheels. A matching `when`-profile beats a plain one.
+```yaml
+- name: "Claude Code"
+  apps: [com.mitchellh.ghostty, com.apple.Terminal]
+  when: { process: claude }                       # only when `claude` runs in the front terminal
+  context: { bash: "tmux capture-pane -p | tail -60" }
+  halo: { … spokes that call functions … }
+```
+- `process: name` — true when a process named `name` runs under the frontmost app (matched by how
+  it was invoked, so `claude` is found even when its OS process name differs).
+- `titleMatches: "regex"` — true when the focused window title matches. Both given ⇒ both must hold.
 
 ### Wells (sub-rings)
 A `well` spoke opens a nested ring. **Provide only `spokes`** — at runtime the sub-ring is laid
@@ -198,6 +272,17 @@ voice:
     - { bash: "agy -p \"$HALO_TRANSCRIPT\"" }   # replace `agy` with your CLI agent
 ```
 
+### Clean up dictation with a local model (AI function)
+```yaml
+llm:
+  providers:
+    local: { base: "http://localhost:11434/v1", model: "llama3.1" }   # no key for a local server
+functions:
+  clean: { prompt: "Clean up this dictation — fix grammar and remove filler. Output only the cleaned text." }
+# …then a finish-ring spoke that cleans up what you said and types it in:
+- { label: Clean up, glyph: sparkles, steps: [ clean ] }
+```
+
 ### Run a command from a normal wheel
 ```yaml
 - { label: Notes, glyph: note.text, steps: [ { bash: "open -a Notes" } ] }
@@ -213,6 +298,9 @@ voice:
 - **Left/right mouse buttons (0/1) can't be the summon button.**
 - The app **rewrites the file** on save and drops your comments — keep notes out of it.
 - A `well` reuses its parent's arc/radius and auto-adds **Back**; the center **always dictates**.
+- **AI keys live in the Keychain** (service `Halo`), referenced by `keyRef` — never put a key in the
+  file. Local servers (Ollama/LM Studio) need no key. A function with no engine configured, or that
+  errors, falls back to typing your raw dictation, so it's safe to add before wiring up a model.
 - Edits apply on the **next summon** (watched live). No relaunch.
 
 ## Common bundle IDs
