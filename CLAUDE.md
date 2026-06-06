@@ -169,3 +169,19 @@ push to `main`; Pages republishes the manifest.
   replacing the bundle (*"…prevented from modifying the applications"*). That's why
   updates are notify-only (see **Updates**); true in-place auto-update would require a
   Developer ID + notarization.
+- **`Bundle.module` is a launch-time landmine in a hand-assembled `.app`.** SwiftPM's
+  generated accessor first looks for the resource bundle at `Bundle.main.bundleURL`
+  (the `.app` *root*) and then falls back to a *hardcoded absolute build-machine path*
+  (`/Users/.../​.build/.../Halo_Halo.bundle`) — and `Swift.fatalError`s if neither
+  exists. On the build machine the fallback path resolves, so it "works"; on any other
+  Mac it **traps on launch**. (This shipped once — the menu-bar icon evaluated
+  `Bundle.module` during `MenuBarExtra` setup and the app couldn't open at all.) Fix:
+  `package.sh` copies `Halo_Halo.bundle` into `Contents/Resources` and the app loads it
+  via `Bundle.halo` (resolves `Bundle.main.resourceURL`, never traps), **not**
+  `Bundle.module`. The bundle must live under `Contents/` — anything at the `.app` root
+  (real dir *or* symlink) breaks the code-signature resource seal ("unsealed contents
+  present in the bundle root", verify fails). Dependency resource bundles
+  (`swift-transformers_Hub`, `swift-crypto_Crypto`) have the same root-seeking accessor,
+  so they can't be shipped without breaking the seal — they're left out because neither
+  is read on Halo's Whisper path (Hub's is only a tokenizer-config fallback that Whisper
+  models don't trigger; Crypto's is an unused privacy manifest).

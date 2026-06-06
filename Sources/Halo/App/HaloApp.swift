@@ -10,7 +10,7 @@ struct HaloApp: App {
     /// Halo's branded menu-bar glyph — a bold ring with a center dot, as a
     /// template image (macOS tints it white/black to match the menu bar).
     private static let menuBarIcon: NSImage = {
-        let image = Bundle.module.url(forResource: "MenuBarIcon", withExtension: "png")
+        let image = Bundle.halo.url(forResource: "MenuBarIcon", withExtension: "png")
             .flatMap { NSImage(contentsOf: $0) } ?? NSImage(systemSymbolName: "circle", accessibilityDescription: "Halo")!
         image.isTemplate = true
         image.size = NSSize(width: 20, height: 20)

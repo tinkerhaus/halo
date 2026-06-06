@@ -1,10 +1,25 @@
 import SwiftUI
 import AppKit
 
+extension Bundle {
+    /// Halo's processed-resources bundle, resolved from the running app's
+    /// `Contents/Resources` (where `package.sh` places `Halo_Halo.bundle` and the code
+    /// signature seals it). We deliberately avoid SwiftPM's generated `Bundle.module`:
+    /// that accessor hardcodes the build machine's absolute `.build` path and
+    /// `Swift.fatalError`s when the bundle isn't found there — which crashed the shipped
+    /// app on launch on every machine but the one it was built on. This degrades to
+    /// `.main` instead, so a missing resource merely falls back to a system glyph.
+    static let halo: Bundle = {
+        Bundle.main.resourceURL
+            .flatMap { Bundle(url: $0.appendingPathComponent("Halo_Halo.bundle")) }
+            ?? .main
+    }()
+}
+
 extension NSImage {
     /// The Halo brand mark — the app icon cropped a touch tighter for inline use.
     /// One asset, used for every in-app logo spot (and mirrored on the website).
-    static let haloLogo: NSImage = Bundle.module.url(forResource: "Logo", withExtension: "png")
+    static let haloLogo: NSImage = Bundle.halo.url(forResource: "Logo", withExtension: "png")
         .flatMap { NSImage(contentsOf: $0) } ?? NSApp.applicationIconImage
 }
 

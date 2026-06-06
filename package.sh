@@ -21,6 +21,27 @@ chmod +x "$APP/Contents/MacOS/$APP_NAME"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 [ -f "$ROOT/Resources/AppIcon.icns" ] && cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
+# Bundle our processed resources (the menu-bar glyph and logo) into the app. SwiftPM
+# emits them as a sibling `Halo_Halo.bundle` next to the binary but does NOT copy it
+# into a hand-assembled .app — and its generated `Bundle.module` accessor then falls
+# back to the BUILD MACHINE's absolute .build path and `fatalError`s when that path is
+# absent. On any other Mac that trapped the app on launch (the menu-bar icon is loaded
+# during MenuBarExtra setup) — which is why an installed copy "couldn't launch at all".
+# We place the bundle under Contents/Resources, where the code signature seals it, and
+# load it via `Bundle.main` (see `Bundle.halo`) instead of `Bundle.module`.
+#
+# It must go under Contents/: anything at the .app ROOT (where SwiftPM's accessor
+# actually looks, since it resolves against Bundle.main.bundleURL = the .app dir)
+# breaks the signature resource seal — codesign warns "unsealed contents present in
+# the bundle root" and the signature fails to verify. That's also why we DON'T ship
+# the dependency bundles (swift-transformers_Hub, swift-crypto_Crypto): their accessors
+# look at the root too, so we couldn't satisfy them without breaking the seal. They are
+# not loaded on Halo's Whisper path (Hub's bundle is only read by a tokenizer-config
+# fallback that Whisper models don't trigger; Crypto's is a privacy manifest never read
+# at runtime), so leaving them out keeps the signature valid with no functional loss.
+BINDIR="$(dirname "$BIN")"
+[ -d "$BINDIR/Halo_Halo.bundle" ] && cp -R "$BINDIR/Halo_Halo.bundle" "$APP/Contents/Resources/Halo_Halo.bundle"
+
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
