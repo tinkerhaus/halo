@@ -3,8 +3,8 @@ set -euo pipefail
 
 APP_NAME="Halo"
 BUNDLE_ID="com.halo.app"
-VERSION="${VERSION:-0.1.0}"   # override per release: VERSION=0.1.1 ./package.sh
-BUILD="${BUILD:-1}"           # CFBundleVersion (the update check compares this). BUILD=2 ./package.sh
+VERSION="${VERSION:-0.2.0}"   # override per release: VERSION=0.2.1 ./package.sh
+BUILD="${BUILD:-2}"           # CFBundleVersion (the update check compares this). BUILD=3 ./package.sh
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 APP="$ROOT/build/$APP_NAME.app"
